@@ -1,5 +1,5 @@
-SQuAD/
+data/
 drqa/__pycache__/
-glove/
+exps/
 models/
 *.log
