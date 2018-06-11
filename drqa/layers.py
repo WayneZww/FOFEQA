@@ -213,8 +213,8 @@ class BilinearSeqAttn(nn.Module):
         Wy = self.linear(y) if self.linear is not None else y
         xWy = x.bmm(Wy.unsqueeze(2)).squeeze(2)
         xWy.data.masked_fill_(x_mask.data, -float('inf'))
-        print("xWy.shape:")
-        print(xWy.shape)
+        #print("xWy.shape:")
+        #print(xWy.shape)
         if self.training:
             # In training we output log-softmax for NLL
             alpha = F.log_softmax(xWy, dim=1)

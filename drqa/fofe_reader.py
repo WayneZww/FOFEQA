@@ -37,18 +37,18 @@ class fofe_linear(nn.Module):
     def __init__(self, channels, alpha): 
         super(fofe_linear, self).__init__()
         self.alpha = alpha
+        self.channels = channels
         self.linear = nn.Sequential(
             nn.Linear(channels,channels, bias=False),
             nn.ReLU(inplace=True)
         )
         
     def forward(self, x):
-        #get the length of x and create matrix or vector
-        length = x.size(-1)
-        matrix = torch.Tensor(x.size(0),length,length)
-        x = torch.mul(matrix, x)
-        output = self.linear(x)
-
+        length = x.size(-2)
+        matrix = torch.Tensor(x.size(0),1,length)
+        matrix[:,]=torch.pow(self.alpha,torch.linspace(length-1,0,length))
+        fofe_code = torch.bmm(matrix,x)
+        output = self.linear(fofe_code)
         return output
 
 
@@ -68,7 +68,7 @@ class FOFE_Reader(nn.Module):
             nn.Conv2d(emb_dim*4, emb_dim*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv2d(emb_dim*4, emb_dim*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dim*4, emb_dim*2, 1, 1, bias=False),
             nn.ReLU(inplace=True)
         )

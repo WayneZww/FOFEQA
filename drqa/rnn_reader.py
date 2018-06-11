@@ -114,9 +114,10 @@ class RnnDocReader(nn.Module):
         x2_mask = question padding mask        [batch * len_q]
         """
         # Embed both document and question
+        print(x1.shape)
         x1_emb = self.embedding(x1)
         x2_emb = self.embedding(x2)
-
+        print(x1_emb.shape)
         # Dropout on embeddings
         if self.opt['dropout_emb'] > 0:
             x1_emb = nn.functional.dropout(x1_emb, p=self.opt['dropout_emb'],
