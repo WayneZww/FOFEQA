@@ -13,6 +13,7 @@ import logging
 from torch.autograd import Variable
 from .utils import AverageMeter
 from .rnn_reader import RnnDocReader
+from .fofe_reader import FOFE_Reader
 
 # Modification:
 #   - change the logger name
