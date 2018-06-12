@@ -11,7 +11,7 @@ from datetime import datetime
 from collections import Counter
 import torch
 import msgpack
-from drqa.model import DocReaderModel
+from drqa.fofe_model import DocReaderModel
 from drqa.utils import str2bool
 
 
@@ -139,16 +139,10 @@ def setup():
                         help='use pos tags as a feature.')
     parser.add_argument('--ner', type=str2bool, nargs='?', const=True, default=True,
                         help='use named entity tags as a feature.')
-    parser.add_argument('--use_qemb', type=str2bool, nargs='?', const=True, default=True)
-    parser.add_argument('--concat_rnn_layers', type=str2bool, nargs='?',
-                        const=True, default=True)
     parser.add_argument('--dropout_emb', type=float, default=0.4)
-    parser.add_argument('--dropout_rnn', type=float, default=0.4)
-    parser.add_argument('--dropout_rnn_output', type=str2bool, nargs='?',
-                        const=True, default=True)
     parser.add_argument('--max_len', type=int, default=15)
-    parser.add_argument('--rnn_type', default='lstm',
-                        help='supported types: rnn, gru, lstm')
+    parser.add_argument('--fofe_alpha', type=float, default=0.8)
+    parser.add_argument('--fofe_max_length', type=int, default=9)
 
     args = parser.parse_args()
 

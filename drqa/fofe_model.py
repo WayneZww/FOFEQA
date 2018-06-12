@@ -12,7 +12,6 @@ import logging
 
 from torch.autograd import Variable
 from .utils import AverageMeter
-from .rnn_reader import RnnDocReader
 from .fofe_reader import FOFEReader
 
 # Modification:
@@ -41,7 +40,7 @@ class DocReaderModel(object):
             self.train_loss.load(state_dict['loss'])
 
         # Building network.
-        self.network = RnnDocReader(opt, embedding=embedding)
+        self.network = FOFEReader(opt, embedding=embedding)
         if state_dict:
             new_state = set(self.network.state_dict().keys())
             for k in list(state_dict['network'].keys()):
@@ -79,7 +78,8 @@ class DocReaderModel(object):
 
         # Run forward
         score_s, score_e = self.network(*inputs)
-
+        print(target_s)
+        print(score_s.shape)
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         self.train_loss.update(loss.item())

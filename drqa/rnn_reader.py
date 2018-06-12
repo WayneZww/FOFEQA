@@ -114,9 +114,9 @@ class RnnDocReader(nn.Module):
         x2_mask = question padding mask        [batch * len_q]
         """
         # Embed both document and question
-        print(x1.shape)
         x1_emb = self.embedding(x1)
         x2_emb = self.embedding(x2)
+        print(x1.shape)
         print(x1_emb.shape)
         # Dropout on embeddings
         if self.opt['dropout_emb'] > 0:
@@ -149,4 +149,5 @@ class RnnDocReader(nn.Module):
         # Predict start and end positions
         start_scores = self.start_attn(doc_hiddens, question_hidden, x1_mask)
         end_scores = self.end_attn(doc_hiddens, question_hidden, x1_mask)
+        print(start_scores.shape)
         return start_scores, end_scores

@@ -3,3 +3,5 @@ drqa/__pycache__/
 exps/
 models/
 *.log
+.vscode
+.ipynb_checkpoints/

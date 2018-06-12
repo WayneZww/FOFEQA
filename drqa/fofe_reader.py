@@ -1,154 +1,132 @@
+# Modification:
+#  -change to support fofe_nn
+# Origin: https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents/drqa
+
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-class fofe_conv1d(nn.Module):
-    def __init__(self, channels, alpha=0.9, length=1, inverse=False):
-        super(fofe_conv1d, self).__init__()
-        self.alpha = alpha
-        self.length = length
-        self.channels = channels
-        self.fofe_filter = self._init_filter(alpha, length, inverse)
-        self.inverse_fofe_filter = self._init_filter(alpha, length, inverse)
-        self.padding = (length - 1)//2
-        self.dilated_conv = nn.Sequential(
-            nn.Conv1d(channels,channels*3,3,1,padding=length,
-                        dilation=length, groups=1, bias=False),
-            nn.ReLU(inplace=True)
-        )
-
-    def _init_filter(self, alpha, length,inverse):
-        self.fofe_filter = torch.Tensor(self.channels, 1, length)
-        for i in range(length):
-            if inverse :
-                exponent = length - i
-            else :
-                exponent = i
-            self.fofe_filter[:,:,i].fill_(torch.pow(alpha,exponent*torch.ones(self.channels,1)))
-
-    def forward(self, x):        
-        x = F.conv1d(x, self.fofe_filter, bias=0, stride=1, 
-                        padding=self.padding, groups=self.channels)
-        x = self.dilated_conv(x)
-        return x
+from .fofe_modules import fofe_conv1d, fofe_linear
 
 
-class fofe_linear(nn.Module):
-    def __init__(self, channels, alpha): 
-        super(fofe_linear, self).__init__()
-        self.alpha = alpha
-        self.channels = channels
-        self.linear = nn.Sequential(
-            nn.Linear(channels,channels, bias=False),
-            nn.ReLU(inplace=True)
-        )
+class FOFEReader(nn.Module):
+    def __init__(self, opt, padding_idx=0, embedding=None):
+        super(FOFEReader, self).__init__()
+        # Store config
+        self.opt = opt
+
+        # Word embeddings
+        if opt['pretrained_words']:
+            assert embedding is not None
+            self.embedding = nn.Embedding.from_pretrained(embedding, freeze=False)
+            if opt['fix_embeddings']:
+                assert opt['tune_partial'] == 0
+                self.embedding.weight.requires_grad = False
+            elif opt['tune_partial'] > 0:
+                assert opt['tune_partial'] + 2 < embedding.size(0)
+                offset = self.opt['tune_partial'] + 2
+
+                def embedding_hook(grad, offset=offset):
+                    grad[offset:] = 0
+                    return grad
+
+                self.embedding.weight.register_hook(embedding_hook)
+
+        else:  # random initialized
+            self.embedding = nn.Embedding(opt['vocab_size'],
+                                          opt['embedding_dim'],
+                                          padding_idx=padding_idx)
+
+        # Input size to FOFE_NN: word emb + question emb + manual features
+        doc_input_size = opt['embedding_dim'] + opt['num_features']
+        if opt['pos']:
+            doc_input_size += opt['pos_size']
+        if opt['ner']:
+            doc_input_size += opt['ner_size']
         
-    def forward(self, x):
-        length = x.size(-2)
-        matrix = torch.Tensor(x.size(0),1,length)
-        matrix[:,]=torch.pow(self.alpha,torch.linspace(length-1,0,length))
-        fofe_code = torch.bmm(matrix,x)
-        output = self.linear(fofe_code)
-        return output
+        self.fofe_nn = FOFE_NN(opt['embedding_dim'], 
+                                opt['fofe_alpha'],
+                                opt['fofe_max_length'])
+        
+    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask):
+        """Inputs:
+        doc = document word indices             [batch * len_d]
+        doc_f = document word features indices  [batch * len_d * nfeat]
+        doc_pos = document POS tags             [batch * len_d]
+        doc_ner = document entity tags          [batch * len_d]
+        doc_mask = document padding mask        [batch * len_d]
+        query = question word indices             [batch * len_q]
+        query_mask = question padding mask        [batch * len_q]
+        """
+        # Embed both document and question
+        doc_emb = self.embedding(doc)
+        query_emb = self.embedding(query)
+        
+        # Dropout on embeddings
+        if self.opt['dropout_emb'] > 0:
+            doc_emb = nn.functional.dropout(doc_emb, p=self.opt['dropout_emb'],
+                                           training=self.training)
+            query_emb = nn.functional.dropout(query_emb, p=self.opt['dropout_emb'],
+                                           training=self.training)
+
+        doc_input_list = [doc_emb, doc_f]
+        if self.opt['pos']:
+            doc_input_list.append(doc_pos)
+        if self.opt['ner']:
+            doc_input_list.append(doc_ner)
+        doc_input = torch.cat(doc_input_list, 2)
+        
+        # Predict start and end positions
+        start_scores, end_scores = self.fofe_nn(query_emb, doc_emb)
+        return start_scores, end_scores
 
 
-
-class FOFE_Reader(nn.Module):
-    def __init__(self, fofe_alpha, fofe_length, emb_dim, dilated):
-        super(FOFE_NN_dilated, self).__init__()
+class FOFE_NN(nn.Module):
+    def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
+        super(FOFE_NN, self).__init__()
         self.doc_fofe_conv = []
-        for i in range(fofe_length):
-            self.doc_fofe_conv.append(fofe_conv1d(emb_dim, fofe_alpha, i))
+        for i in range(1, fofe_max_length+1, 2):
+            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i))
         self.doc_fofe_conv = nn.ModuleList(self.doc_fofe_conv)
-        self.query_fofe = fofe_linear(emb_dim, fofe_alpha)
-        self.emb_dim = emb_dim
+        self.query_fofe = fofe_linear(emb_dims, fofe_alpha)
+        self.emb_dims = emb_dims
         self.fnn = nn.Sequential(
-            nn.Conv2d(emb_dim*4, emb_dim*4, 1, 1, bias=False),
+            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dim*4, emb_dim*4, 1, 1, bias=False),
+            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dim*4, emb_dim*4, 1, 1, bias=False),
+            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dim*4, emb_dim*2, 1, 1, bias=False),
+            nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
             nn.ReLU(inplace=True)
         )
-        self.s_conv = nn.Conv2d(emb_dim*2, 1, 1, 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dim*2, 1, 1, 1, bias=False)
+        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)       
         
-        
-
     def doc_fofe(self, x):
         fofe_out = []
-        for fofe_layer in self.fofe_code:
-            fofe_out.append(fofe_layer(x))
-        fofe_out = torch.cat(fofe_out,1)
-
+        for fofe_layer in self.doc_fofe_conv:
+            fofe_out.append(fofe_layer(x).unsqueeze(-2))
+        fofe_out = torch.cat(fofe_out,-2)
+        
         return fofe_out
 
     def forward(self, query, document):
         query_fofe_code = self.query_fofe(query)
         doc_fofe_code = self.doc_fofe(document)
-        query_doc = torch.Tensor(query_fofe_code.size(0), self.emb_dim*4,
-                        query_fofe_code.size(2),query_fofe_code.size(3))
-        query_doc[:,:self.emb_dim*3,:,:] = doc_fofe_code
-        query_doc[:,self.emb_dim*3:self.emb_dim*4,:,:].fill_(query_fofe_code)
+        query_doc = torch.Tensor(doc_fofe_code.size(0), self.emb_dims*4,
+                        doc_fofe_code.size(-2),doc_fofe_code.size(-1))
+        query_doc[:,:self.emb_dims*3,:,:] = doc_fofe_code
+        query_doc[:,self.emb_dims*3:self.emb_dims*4,:,:] = torch.transpose(query_fofe_code,-2,-1).unsqueeze(-1)
         x = self.fnn(query_doc)
-        s_score = F.softmax(self.s_conv(x),dim=-2)
-        e_score = F.softmax(self.e_conv(x),dim=-2)
+        s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
+        e_score = self.e_conv(x).squeeze(-2).squeeze(-2)
+        if self.training:
+            # In training we output log-softmax for NLL
+            s_score = F.log_softmax(s_score, dim=1)
+            e_score = F.log_softmax(e_score, dim=1)
+        else:
+            # ...Otherwise 0-1 probabilities
+            s_score = F.softmax(s_score, dim=1)
+            e_score = F.softmax(e_score, dim=1)
 
         return s_score, e_score
-
-
-"""class FOFE_CNN(nn.Module):
-    def __init__(self, fofe_alpha, fofe_length, emb_dim, dilated):
-        super(FOFE_DFNN, self).__init__()
-        self.fofe_code = []
-        for i in range(fofe_length):
-            self.fofe_code.append(fofe_code1d(emb_dim, fofe_alpha, i))
-        self.fofe_code = nn.ModuleList(self.fofe_conv)
-        self.conv_layer = nn.Conv2d(emb_dim,emb_dim,(fofe_length, 3),1,1,0,1,bias=False)
-
-    def fofo_conv(self, x):
-        fofe_out = []
-        for fofe_layer in self.fofe_code:
-            fofe_out.append(fofe_layer(x))
-        fofe_out = torch.cat(fofe_out,1)
-
-        conv_out = []
-        for conv_layer in self.conv_layer:
-            conv_out.append(conv_layer(fofe_out))
-        conv_out = torch.cat(conv_out,1)
-
-        return conv_out
-
-    def forward(self, query, document):
-        query_fofe = self.fofe_conv(query)
-        document_fofe = self.fofe_conv(document)
-        
-        return output
-
-
-"""
-
-"""
-class FOFE_DFNN(nn.Module):
-    def __init__(self, fofe_alpha):
-        super(FOFE_DFNN, self).__init__()
-        self.fofe = fofe(fofe_alpha)
-        self.dfnn = nn.Sequential(
-            nn.Linear(),
-            nn.ReLU(inplace=True),
-            nn.Linear(),
-            nn.ReLU(inplace=True),
-            nn.Linear(),
-            nn.ReLU(inplace=True),
-        )
-    
-    def forward(self, query, document):
-        query_fofe = self.fofe(query)
-        document_fofe = self.fofe(document)
-        #concat query's and document's fofe code
-        dfnn_input = torch.cat((query_fofe,document_fofe),1)
-        output = self.dfnn(dfnn_input)
-        return output
-"""
