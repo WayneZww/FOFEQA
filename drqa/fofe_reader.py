@@ -83,8 +83,8 @@ class FOFE_NN(nn.Module):
     def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
         super(FOFE_NN, self).__init__()
         self.doc_fofe_conv = []
-        for i in range(1, fofe_max_length+1, 2):
-            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i))
+        for i in range(3, fofe_max_length+1, 2):
+            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i, i))
         self.doc_fofe_conv = nn.ModuleList(self.doc_fofe_conv)
         self.query_fofe = fofe_linear(emb_dims, fofe_alpha)
         self.emb_dims = emb_dims
@@ -93,13 +93,11 @@ class FOFE_NN(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
             nn.ReLU(inplace=True)
         )
-        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)       
+        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)       
         
     def dq_fofe(self, query, document):
         query_fofe_code = self.query_fofe(query)
@@ -111,7 +109,7 @@ class FOFE_NN(nn.Module):
         for fofe_layer in self.doc_fofe_conv:
             fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
         fofe_out = torch.cat(fofe_out,-2)
-        
+        print(fofe_out)
         return fofe_out
 
     def forward(self, query, document):
@@ -123,6 +121,7 @@ class FOFE_NN(nn.Module):
             # In training we output log-softmax for NLL
             s_score = F.log_softmax(s_score, dim=1)
             e_score = F.log_softmax(e_score, dim=1)
+            print(s_score.shape)
         else:
             # ...Otherwise 0-1 probabilities
             s_score = F.softmax(s_score, dim=1)
@@ -132,27 +131,22 @@ class FOFE_NN(nn.Module):
 
 
 
-class FOFE_NN(nn.Module):
+class FOFE_CNN(nn.Module):
     def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
         super(FOFE_NN, self).__init__()
         self.doc_fofe_conv = []
-        for i in range(1, fofe_max_length+1, 2):
-            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i))
+        for i in range(3, fofe_max_length+1, 2):
+            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i, i))
         self.doc_fofe_conv = nn.ModuleList(self.doc_fofe_conv)
         self.query_fofe = fofe_linear(emb_dims, fofe_alpha)
         self.emb_dims = emb_dims
-        self.fnn = nn.Sequential(
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
-            nn.ReLU(inplace=True)
+        self.cnn = nn.Sequential(
+            fofe_conv2d(emb_dims, fofe_alpha, 3, 1),
+            fofe_conv2d(emb_dims, fofe_alpha, 3, 1),
+            fofe_conv2d(emb_dims, fofe_alpha, 3, 1 ),           
         )
-        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)       
+        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)       
         
     def dq_fofe(self, query, document):
         query_fofe_code = self.query_fofe(query)
@@ -164,12 +158,13 @@ class FOFE_NN(nn.Module):
         for fofe_layer in self.doc_fofe_conv:
             fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
         fofe_out = torch.cat(fofe_out,-2)
+        print(fofe_out.shape)
         
         return fofe_out
 
     def forward(self, query, document):
         fofe_code = self.dq_fofe(query, document)
-        x = self.fnn(fofe_code)
+        x = self.cnn(fofe_code)
         s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
         e_score = self.e_conv(x).squeeze(-2).squeeze(-2)
         if self.training:
