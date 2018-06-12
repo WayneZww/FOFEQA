@@ -101,23 +101,22 @@ class FOFE_NN(nn.Module):
         self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)
         self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length+1)//2,1), 1, bias=False)       
         
-    def doc_fofe(self, x):
+    def dq_fofe(self, query, document):
+        query_fofe_code = self.query_fofe(query)
+        q_mat = []
+        for i in range(document.size(-2)):
+            q_mat.append(query_fofe_code)
+        query_mat = torch.transpose(torch.cat(q_mat,-2),-2,-1).unsqueeze(-2)
         fofe_out = []
         for fofe_layer in self.doc_fofe_conv:
-            fofe_out.append(fofe_layer(x).unsqueeze(-2))
+            fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
         fofe_out = torch.cat(fofe_out,-2)
         
         return fofe_out
 
     def forward(self, query, document):
-        query_fofe_code = self.query_fofe(query)
-        doc_fofe_code = self.doc_fofe(document)
-        query_doc = torch.Tensor(doc_fofe_code.size(0), self.emb_dims*4,
-                        doc_fofe_code.size(-2),doc_fofe_code.size(-1))
-        query_doc[:,:self.emb_dims*3,:,:] = doc_fofe_code
-        query_doc[:,self.emb_dims*3:self.emb_dims*4,:,:] = torch.transpose(query_fofe_code,-2,-1).unsqueeze(-1)
-        print(query_doc)
-        x = self.fnn(query_doc)
+        fofe_code = self.dq_fofe(query, document)
+        x = self.fnn(fofe_code)
         s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
         e_score = self.e_conv(x).squeeze(-2).squeeze(-2)
         if self.training:

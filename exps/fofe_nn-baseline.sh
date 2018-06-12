@@ -2,6 +2,7 @@
 name=test
 
 python -u train_fofe.py --model_dir ./exps/${name} \
+                --batch_size 2 \
                 --fofe_alpha 0.8 \
                 --fofe_max_length 9 \
                 --pos False --ner False \
