@@ -78,6 +78,8 @@ class DocReaderModel(object):
 
         # Run forward
         score_s, score_e = self.network(*inputs)
+        print(target_s)
+        print(score_s.shape)
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         self.train_loss.update(loss.item())

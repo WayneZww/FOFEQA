@@ -116,7 +116,7 @@ class FOFE_NN(nn.Module):
                         doc_fofe_code.size(-2),doc_fofe_code.size(-1))
         query_doc[:,:self.emb_dims*3,:,:] = doc_fofe_code
         query_doc[:,self.emb_dims*3:self.emb_dims*4,:,:] = torch.transpose(query_fofe_code,-2,-1).unsqueeze(-1)
-        print(query_doc)
+        print(query_doc[1][1])
         x = self.fnn(query_doc)
         s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
         e_score = self.e_conv(x).squeeze(-2).squeeze(-2)

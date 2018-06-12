@@ -47,6 +47,7 @@ class fofe_linear(nn.Module):
     def forward(self, x):
         length = x.size(-2)
         self.matrix.resize_(x.size(0),1,length)
+        print(self.matrix.dtype)
         self.matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         fofe_code = torch.bmm(self.matrix,x)
         output = self.linear(fofe_code)

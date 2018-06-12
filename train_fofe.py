@@ -107,7 +107,7 @@ def setup():
                         help='whether to use GPU acceleration.')
     # training
     parser.add_argument('-e', '--epochs', type=int, default=40)
-    parser.add_argument('-bs', '--batch_size', type=int, default=2)
+    parser.add_argument('-bs', '--batch_size', type=int, default=32)
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
                              'e.g. "checkpoint_epoch_11.pt"')
