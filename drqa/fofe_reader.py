@@ -80,6 +80,14 @@ class FOFEReader(nn.Module):
 
 
 class FOFE_NN(nn.Module):
+    def weights_init(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
+        
     def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
         super(FOFE_NN, self).__init__()
         self.doc_fofe_conv = []
@@ -97,8 +105,11 @@ class FOFE_NN(nn.Module):
             nn.ReLU(inplace=True)
         )
         self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)       
-        
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False) 
+        self.s_conv.apply(self.weights_init)      
+        self.e_conv.apply(self.weights_init) 
+        self.fnn.apply(self.weights_init) 
+
     def dq_fofe(self, query, document):
         query_fofe_code = self.query_fofe(query)
         q_mat = []
@@ -109,7 +120,6 @@ class FOFE_NN(nn.Module):
         for fofe_layer in self.doc_fofe_conv:
             fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
         fofe_out = torch.cat(fofe_out,-2)
-        print(fofe_out)
         return fofe_out
 
     def forward(self, query, document):
@@ -121,7 +131,6 @@ class FOFE_NN(nn.Module):
             # In training we output log-softmax for NLL
             s_score = F.log_softmax(s_score, dim=1)
             e_score = F.log_softmax(e_score, dim=1)
-            print(s_score.shape)
         else:
             # ...Otherwise 0-1 probabilities
             s_score = F.softmax(s_score, dim=1)

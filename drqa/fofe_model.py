@@ -75,20 +75,19 @@ class DocReaderModel(object):
         inputs = [e.to(self.device) for e in ex[:7]]
         target_s = ex[7].to(self.device)
         target_e = ex[8].to(self.device)
-
         # Run forward
         score_s, score_e = self.network(*inputs)
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         self.train_loss.update(loss.item())
-
+        print(loss.item())
         # Clear gradients and run backward
         self.optimizer.zero_grad()
         loss.backward()
 
         # Clip gradients
-        torch.nn.utils.clip_grad_norm_(self.network.parameters(),
-                                      self.opt['grad_clipping'])
+        #torch.nn.utils.clip_grad_norm_(self.network.parameters(),
+        #                              self.opt['grad_clipping'])
 
         # Update parameters
         self.optimizer.step()
