@@ -75,7 +75,7 @@ class FOFEReader(nn.Module):
         doc_input = torch.cat(doc_input_list, 2)
         
         # Predict start and end positions
-        start_scores, end_scores = self.fofe_nn(query_emb, doc_emb)
+        start_scores, end_scores = self.fofe_nn(query_emb, query_mask, doc_emb, doc_mask)
         return start_scores, end_scores
 
 
@@ -122,11 +122,18 @@ class FOFE_NN(nn.Module):
         fofe_out = torch.cat(fofe_out,-2)
         return fofe_out
 
-    def forward(self, query, document):
-        fofe_code = self.dq_fofe(query, document)
+    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
+        
+        fofe_code = self.dq_fofe(query_emb, doc_emb)
         x = self.fnn(fofe_code)
+        
+        # calculate scores for begin and end point
         s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
         e_score = self.e_conv(x).squeeze(-2).squeeze(-2)
+        # mask scores
+        s_score.data.masked_fill_(doc_mask.data, -float('inf'))
+        e_score.data.masked_fill_(doc_mask.data, -float('inf'))
+        
         if self.training:
             # In training we output log-softmax for NLL
             s_score = F.log_softmax(s_score, dim=1)
