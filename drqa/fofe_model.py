@@ -80,7 +80,6 @@ class DocReaderModel(object):
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         self.train_loss.update(loss.item())
-       
         # Clear gradients and run backward
         self.optimizer.zero_grad()
         loss.backward()
