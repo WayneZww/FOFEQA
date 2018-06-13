@@ -91,21 +91,21 @@ class FOFE_NN(nn.Module):
     def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
         super(FOFE_NN, self).__init__()
         self.doc_fofe_conv = []
-        for i in range(3, fofe_max_length+1, 2):
+        for i in range(2, fofe_max_length+1):
             self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i, i))
         self.doc_fofe_conv = nn.ModuleList(self.doc_fofe_conv)
         self.query_fofe = fofe_linear(emb_dims, fofe_alpha)
         self.emb_dims = emb_dims
         self.fnn = nn.Sequential(
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
+            nn.Conv2d(emb_dims*2, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
             nn.ReLU(inplace=True)
         )
-        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1)//2,1), 1, bias=False) 
+        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False) 
         self.s_conv.apply(self.weights_init)      
         self.e_conv.apply(self.weights_init) 
         self.fnn.apply(self.weights_init) 

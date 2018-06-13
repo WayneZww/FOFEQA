@@ -1,7 +1,10 @@
+import math
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
+
+
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):
         super(fofe_conv1d, self).__init__()
@@ -13,7 +16,7 @@ class fofe_conv1d(nn.Module):
         self._init_filter(emb_dims, alpha, length, inverse)
         self.padding = (length - 1)//2
         self.dilated_conv = nn.Sequential(
-            nn.Conv1d(self.channels,self.channels*3,3,1,padding=length,
+            nn.Conv1d(self.channels,self.channels,3,1,padding=length,
                         dilation=dilation, groups=1, bias=False),
             nn.ReLU(inplace=True)
         )
@@ -25,7 +28,10 @@ class fofe_conv1d(nn.Module):
             self.fofe_filter[:,:,].data = torch.pow(self.alpha,torch.range(0,length-1))
 
     def forward(self, x): 
-        x = F.conv1d(torch.transpose(x,-2,-1), self.fofe_filter, bias=None, stride=1, 
+        x = torch.transpose(x,-2,-1)
+        if (self.length % 2 == 0) :
+            x = F.pad(x, (0,1), mode='constant', value=0)
+        x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
         x = self.dilated_conv(x)
 
