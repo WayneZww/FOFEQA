@@ -34,7 +34,6 @@ class fofe_conv1d(nn.Module):
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
         x = self.dilated_conv(x)
-
         return x
 
 
@@ -67,14 +66,11 @@ class fofe_conv2d(nn.Module):
 
         return x
 
-    
+
 class fofe_linear(nn.Module):
     def __init__(self, channels, alpha): 
         super(fofe_linear, self).__init__()
         self.alpha = alpha
-        self.channels = channels
-        self.matrix = Parameter(torch.Tensor())
-        self.matrix.requires_grad_(False)
         self.linear = nn.Sequential(
             nn.Linear(channels,channels, bias=False),
             nn.ReLU(inplace=True)
@@ -82,8 +78,13 @@ class fofe_linear(nn.Module):
         
     def forward(self, x):
         length = x.size(-2)
-        self.matrix.resize_(x.size(0),1,length)
-        self.matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-        fofe_code = torch.bmm(self.matrix,x)
+        if torch.cuda.is_available() :
+            matrix = torch.Tensor(x.size(0),1,length).to(torch.device('cuda:0'))
+        else :
+            matrix = torch.Tensor(x.size(0),1,length)
+        matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        fofe_code = torch.bmm(matrix,x)
         output = self.linear(fofe_code)
         return output
+
+

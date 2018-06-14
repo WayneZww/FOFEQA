@@ -116,15 +116,14 @@ class RnnDocReader(nn.Module):
         # Embed both document and question
         x1_emb = self.embedding(x1)
         x2_emb = self.embedding(x2)
-        print(x1.shape)
-        print(x1_emb.shape)
+     
         # Dropout on embeddings
         if self.opt['dropout_emb'] > 0:
             x1_emb = nn.functional.dropout(x1_emb, p=self.opt['dropout_emb'],
                                            training=self.training)
             x2_emb = nn.functional.dropout(x2_emb, p=self.opt['dropout_emb'],
                                            training=self.training)
-
+        
         drnn_input_list = [x1_emb, x1_f]
         # Add attention-weighted question representation
         if self.opt['use_qemb']:
@@ -137,7 +136,7 @@ class RnnDocReader(nn.Module):
         drnn_input = torch.cat(drnn_input_list, 2)
         # Encode document with RNN
         doc_hiddens = self.doc_rnn(drnn_input, x1_mask)
-
+        
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(x2_emb, x2_mask)
         if self.opt['question_merge'] == 'avg':
@@ -149,5 +148,5 @@ class RnnDocReader(nn.Module):
         # Predict start and end positions
         start_scores = self.start_attn(doc_hiddens, question_hidden, x1_mask)
         end_scores = self.end_attn(doc_hiddens, question_hidden, x1_mask)
-        print(start_scores.shape)
+
         return start_scores, end_scores

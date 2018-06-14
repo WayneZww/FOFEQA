@@ -72,13 +72,22 @@ class DocReaderModel(object):
         self.network.train()
 
         # Transfer to GPU
-        inputs = [e.to(self.device) for e in ex[:7]]
-        target_s = ex[7].to(self.device)
-        target_e = ex[8].to(self.device)
+        #inputs = [e.to(self.device) for e in ex[:7]]
+        #target_s = ex[7].to(self.device)
+        #target_e = ex[8].to(self.device)
+        
+        if self.opt['cuda']:
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:7]]
+        else:
+            inputs = [Variable(e) for e in ex[:7]]
+        target_s = Variable(ex[7].cuda())
+        target_e = Variable(ex[8].cuda())
+        
         # Run forward
         score_s, score_e = self.network(*inputs)
         # Compute loss and accuracies
-        loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
+        for i in range(len(score_s)):
+            loss = F.nll_loss(score_s[i], target_s)/len(score_s) + F.nll_loss(score_e[i], target_e)/len(score_s)
         self.train_loss.update(loss.item())
         # Clear gradients and run backward
         self.optimizer.zero_grad()
@@ -87,7 +96,7 @@ class DocReaderModel(object):
         # Clip gradients it helps converges
         torch.nn.utils.clip_grad_norm_(self.network.parameters(),
                                       self.opt['grad_clipping'])
-
+        print(loss.grad)
         # Update parameters
         self.optimizer.step()
         self.updates += 1
