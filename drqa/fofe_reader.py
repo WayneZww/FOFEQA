@@ -43,7 +43,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         
-        self.fofe_nn = FOFE_NN_split(opt['embedding_dim'], 
+        self.fofe_nn = FOFE_NN(opt['embedding_dim'], 
                                 opt['fofe_alpha'],
                                 opt['fofe_max_length'])
         

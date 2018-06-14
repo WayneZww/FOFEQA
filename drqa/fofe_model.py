@@ -88,9 +88,10 @@ class DocReaderModel(object):
         # Run forward
         score_s, score_e = self.network(*inputs)
         # Compute loss and accuracies
-        for i in range(len(score_s)):
+        loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
+        #for i in range(len(score_s)):
             #print(score_s[i])
-            loss = F.nll_loss(score_s[i], target_s)/len(score_s) + F.nll_loss(score_e[i], target_e)/len(score_s)
+        #    loss = F.nll_loss(score_s[i], target_s)/len(score_s) + F.nll_loss(score_e[i], target_e)/len(score_s)
         self.train_loss.update(loss.item())
         # Clear gradients and run backward
         self.optimizer.zero_grad()
