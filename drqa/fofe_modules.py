@@ -23,9 +23,9 @@ class fofe_conv1d(nn.Module):
 
     def _init_filter(self, channels, alpha, length, inverse):
         if not inverse :
-            self.fofe_filter[:,:,].data = torch.pow(self.alpha,torch.linspace(length-1,0,length))
+            self.fofe_filter[:,:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         else :
-            self.fofe_filter[:,:,].data = torch.pow(self.alpha,torch.range(0,length-1))
+            self.fofe_filter[:,:,].copy_(torch.pow(self.alpha,torch.range(0,length-1)))
 
     def forward(self, x): 
         x = torch.transpose(x,-2,-1)

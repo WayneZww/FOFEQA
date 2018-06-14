@@ -188,10 +188,12 @@ class FOFE_NN_split(nn.Module):
     def dq_fofe(self, query, document):
         query_fofe_code = self.query_fofe(query)
         q_mat = []
+        
         for i in range(document.size(-2)):
             q_mat.append(query_fofe_code)
         query_mat = torch.transpose(torch.cat(q_mat,-2),-2,-1).unsqueeze(-2)
         fofe_out = []
+        
         for fofe_layer in self.doc_fofe_conv:
             fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
         fofe_out = torch.cat(fofe_out,-2)
@@ -205,8 +207,6 @@ class FOFE_NN_split(nn.Module):
         e_score = self.e_conv(x)
         s_score = torch.split(s_score, 1, dim=-2)
         e_score = torch.split(e_score, 1, dim=-2)
-        import pdb
-        pdb.set_trace()
         # mask scores
         for i in range(self.fofe_max_length-1): 
             s_score[i].squeeze_(-2).squeeze_(-2).data.masked_fill_(doc_mask.data, -float('inf'))
