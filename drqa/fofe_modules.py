@@ -18,7 +18,7 @@ class fofe_conv1d(nn.Module):
         self.dilated_conv = nn.Sequential(
             nn.Conv1d(self.channels,self.channels,3,1,padding=length,
                         dilation=dilation, groups=1, bias=False),
-            nn.ReLU(inplace=True)
+            nn.LeakyReLU(0.1, inplace=True)           
         )
 
     def _init_filter(self, channels, alpha, length, inverse):
@@ -50,6 +50,7 @@ class fofe_conv2d(nn.Module):
         self.dilated_conv = nn.Sequential(
             nn.Conv2d(self.channels,self.channels,(1,3),1,padding=(0,length),
                         dilation=(1,dilation), groups=1, bias=False),
+            nn.LayerNorm(self.channels),
             nn.ReLU(inplace=True)
         )
 
@@ -78,10 +79,9 @@ class fofe_linear(nn.Module):
         
     def forward(self, x):
         length = x.size(-2)
-        if torch.cuda.is_available() :
-            matrix = torch.Tensor(x.size(0),1,length).to(torch.device('cuda:0'))
-        else :
-            matrix = torch.Tensor(x.size(0),1,length)
+        matrix = torch.Tensor(x.size(0),1,length)
+        if x.data.is_cuda :
+            matrix = matrix.cuda()
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         fofe_code = torch.bmm(matrix,x)
         output = self.linear(fofe_code)

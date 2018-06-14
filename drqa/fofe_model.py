@@ -78,10 +78,12 @@ class DocReaderModel(object):
         
         if self.opt['cuda']:
             inputs = [Variable(e.cuda(async=True)) for e in ex[:7]]
+            target_s = Variable(ex[7].cuda())
+            target_e = Variable(ex[8].cuda())
         else:
             inputs = [Variable(e) for e in ex[:7]]
-        target_s = Variable(ex[7].cuda())
-        target_e = Variable(ex[8].cuda())
+            target_s = Variable(ex[7])
+            target_e = Variable(ex[8])
         
         # Run forward
         score_s, score_e = self.network(*inputs)
@@ -94,9 +96,9 @@ class DocReaderModel(object):
         loss.backward()
 
         # Clip gradients it helps converges
-        torch.nn.utils.clip_grad_norm_(self.network.parameters(),
-                                      self.opt['grad_clipping'])
-        print(loss.grad)
+        #torch.nn.utils.clip_grad_norm_(self.network.parameters(),
+        #                              self.opt['grad_clipping'])
+
         # Update parameters
         self.optimizer.step()
         self.updates += 1

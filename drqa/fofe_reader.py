@@ -168,11 +168,14 @@ class FOFE_NN_split(nn.Module):
         self.fofe_max_length = fofe_max_length
         self.fnn = nn.Sequential(
             nn.Conv2d(emb_dims*2, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(emb_dims*4),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(emb_dims*4),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
-            nn.ReLU(inplace=True)
+            nn.BatchNorm2d(emb_dims*2),
+            nn.LeakyReLU(0.1, inplace=True)
         )
         self.s_conv = nn.Conv2d(emb_dims*2, 1, 1, 1, bias=False)
         self.e_conv = nn.Conv2d(emb_dims*2, 1, 1, 1, bias=False)
@@ -202,6 +205,10 @@ class FOFE_NN_split(nn.Module):
         # calculate scores for begin and end point
         s_score = torch.split(self.s_conv(x), 1, dim=-2)
         e_score = torch.split(self.e_conv(x), 1, dim=-2)
+        # print("grad")
+        # print(self.e_conv.weight.grad)
+        # print("weight")
+        # print(self.e_conv.weight.data)
         # mask scores
         for i in range(self.fofe_max_length-1):    
             s_score[i].squeeze_(-2).squeeze_(-2).data.masked_fill_(doc_mask.data, -float('inf'))
