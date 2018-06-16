@@ -38,7 +38,7 @@ class fofe_conv1d(nn.Module):
 
 
 class fofe_block(nn.Module):
-    def __init__(self, inplanes, planes, alpha=0.7, length=3, dilation=3, inverse=False):
+    def __init__(self, inplanes, planes, alpha=0.8, length=3, dilation=3, inverse=False):
         super(fofe_block, self).__init__()
         self.length = length
         self.channels = inplanes
@@ -46,11 +46,10 @@ class fofe_block(nn.Module):
         self.fofe_filter.requires_grad_(False)
         self._init_filter(alpha, length, inverse)
         self.padding = (length - 1)//2
-        self.conv = nn.Conv1d(inplanes, planes,3,1,padding=length,
-                        dilation=dilation, groups=1, bias=False)
-        self.bn = nn.BatchNorm1d(planes)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
-        self.downsample = downsample
+        self.conv = nn.Sequential(nn.Conv1d(inplanes, planes,3,1,padding=length,
+                        dilation=dilation, groups=1, bias=False),
+                    nn.BatchNorm1d(planes),
+                    nn.LeakyReLU(0.1, inplace=True))
 
     def _init_filter(self, alpha, length, inverse):
         if not inverse :
@@ -65,8 +64,7 @@ class fofe_block(nn.Module):
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
         x = self.conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
+    
         return x
     
 

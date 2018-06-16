@@ -5,7 +5,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe_linear
+from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block
 
 
 class FOFEReader(nn.Module):
@@ -151,7 +151,7 @@ class FOFE_NN(nn.Module):
         return s_score, e_score
 
     
-class FOFE_NN_split(nn.Module):
+class FOFE_NN_att(nn.Module):
     def weights_init(self, m):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
@@ -161,7 +161,7 @@ class FOFE_NN_split(nn.Module):
             m.bias.data.fill_(1e-4)
         
     def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
-        super(FOFE_NN_split, self).__init__()
+        super(FOFE_NN_att, self).__init__()
         self.doc_fofe_conv = []
         for i in range(2, fofe_max_length+1):
             self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i, i))
@@ -180,8 +180,8 @@ class FOFE_NN_split(nn.Module):
             nn.BatchNorm2d(emb_dims*2),
             nn.LeakyReLU(0.1, inplace=True)
         )
-        self.s_conv = nn.Conv2d(emb_dims*2, 1, 1, 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, 1, 1, bias=False)
+        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
+        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
         
         self.s_conv.apply(self.weights_init)      
         self.e_conv.apply(self.weights_init) 
