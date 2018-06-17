@@ -128,13 +128,28 @@ class fofe_linear(nn.Module):
         
     def forward(self, x):
         length = x.size(-2)
-        matrix = torch.Tensor(x.size(0),1,length)
-        if x.data.is_cuda :
-            matrix = matrix.cuda()
+        #Should use new_empty here
+        matrix = x.new_empty(x.size(0),1,length)
+        #if x.data.is_cuda :
+        #    matrix = matrix.cuda()
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         fofe_code = torch.bmm(matrix,x)
         output = self.linear(fofe_code)
         return output
+
+
+class fofe(nn.Module):
+    def __init__(self, channels, alpha): 
+        super(fofe, self).__init__()
+        self.alpha = alpha
+        
+    def forward(self, x):
+        length = x.size(-2)
+        matrix = x.new_empty(x.size(0),1,length)
+        matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        fofe_code = torch.bmm(matrix,x)
+        return fofe_code
+
 
 """
         
