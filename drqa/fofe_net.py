@@ -4,94 +4,72 @@ import torch.nn.functional as F
 from .fofe_modules import Attention, fofe_block, fofe_res_block
         
 class FOFENet(nn.Module):
-    def _make_layer(self, block, planes, blocks, block_convs, stride=1):
+    def _make_layer(self, block, inplanes, planes, blocks, block_convs, stride=1, moduleList=False):
         downsample = None
-        if stride != 1 or self.inplanes != planes:
+        if stride != 1 or inplanes != planes:
             downsample = nn.Sequential(
-                nn.Conv1d(self.inplanes, planes * block.expansion,
+                nn.Conv1d(inplanes, planes,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm1d(planes * block.expansion),
+                nn.BatchNorm1d(planes),
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, block_convs, downsample=downsample))
-        self.inplanes = planes * block.expansion
+        layers.append(block(inplanes, planes, block_convs, downsample=downsample))
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, block_convs))
+            layers.append(block(planes, planes, block_convs))
 
-        return nn.Sequential(*layers)
+        if moduleList :
+            return nn.ModuleList(layers)
+        else : 
+            return nn.Sequential(*layers)
         
-    def weights_init(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            nn.init.kaiming_normal_(m.weight.data)
-        elif classname.find('BatchNorm') != -1:
-            m.weight.data.fill_(1.)
-            m.bias.data.fill_(1e-4)
-        
-    def __init__(self, block, emb_dims, fofe_alpha, fofe_max_length, att_bidirection=False, att_q2c=True, training=True):
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet, self).__init__()
-        self.inplanes=256
+        #self.inplanes=emb_dims
         self.att_bidirection = att_bidirection
         self.att_q2c = att_q2c
 
-        self.doc_fofe = self._make_layer(block, emb_dims, 6, 3)
-        self.query_fofe = self._make_layer(block, emb_dims, 3, 1)
-        self.attention = Attention(emb_dims, att_q2c, att_bidirection)
-        self.output_encoder = []
-        for i in range(3):
-            self.output_encoder.append(block(self.inplanes, emb_dims, 4))
-        self.output_encoder = nn.ModuleList(self.output_encoder)
-        self.pointer_s = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
-        self.pointer_e = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
+        self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3)
+        self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1)
+        self.attention = Attention(channels, att_q2c, att_bidirection)
+        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, moduleList=True)
 
-        #initial weight
-        self.query_fofe.apply(self.weights_init) 
-        self.doc_fofe.apply(self.weights_init)
-        self.pointer_s.apply(self.weights_init) 
-        self.pointer_e.apply(self.weights_init) 
+        self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
+        self.pointer_e = nn.Conv1d(channels*2, 1, 1, bias=False)
 
-    def out_encode(self, d_code):
+    def out_encode(self, x):
         s_score = []
         e_score = []
         idx = 0
         for encoder in self.output_encoder:
             idx += 1
-            out = encoder(d_code)
+            x = encoder(x)
             if idx == 1:
-                s_score.append(out)
-                e_score.append(out)
+                s_score.append(x)
+                e_score.append(x)
             elif idx == 2:
-                s_score.append(out)
+                s_score.append(x)
             elif idx == 3:
-                e_score.append(out)
-
+                e_score.append(x)
+    
         s_score = torch.cat(s_score, dim=1)
         e_score = torch.cat(e_score, dim=1)
 
          # calculate scores for begin and end point
-        s_score = self.pointer_s(s_score)
-        e_score = self.pointer_e(e_score)
+        s_score = self.pointer_s(s_score).squeeze(-2)
+        e_score = self.pointer_e(e_score).squeeze(-2)
 
         return (s_score, e_score)
 
-
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
+        query_emb = torch.transpose(query_emb,-2,-1)
+        doc_emb = torch.transpose(doc_emb,-2,-1)
+
         q_code = self.query_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
-        import pdb
-        pdb.set_trace()
-        attention = self.attention(d_code, q_code)
-        if self.bidirection :
-            (q2c_att, c2q_att) = attention
-        elif self.q2c:
-            q2c_att = attention
-        else :
-            c2q_att = attention
-
-        x = d_code.bmm(q2c_att)
-        (s_score, e_score) = self.out_encode(x)
+        att_code = self.attention(d_code, q_code)
         
+        (s_score, e_score) = self.out_encode(att_code)
         # mask scores
         s_score.data.masked_fill_(doc_mask.data, -float('inf'))
         e_score.data.masked_fill_(doc_mask.data, -float('inf'))

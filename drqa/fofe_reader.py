@@ -5,7 +5,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_block
+from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_block, fofe_base_block
 from .fofe_net import FOFENet
 
 
@@ -44,9 +44,21 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         
-        self.fofe_nn = FOFENet(fofe_res_block, opt['embedding_dim'], 
+        self.fofe_nn = FOFENet(fofe_base_block, opt['embedding_dim'], 
+                                256,
                                 opt['fofe_alpha'],
                                 opt['fofe_max_length'])
+         #initial weight
+        self.fofe_nn.apply(self.weights_init)
+    
+    
+    def weights_init(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
         
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask):
         """Inputs:
