@@ -40,7 +40,7 @@ class FOFENet(nn.Module):
         self.attention = Attention(emb_dims, att_q2c, att_bidirection)
         self.output_encoder = []
         for i in range(3):
-            self.output_encoder.append(block(self.inplanes, planes, 4))
+            self.output_encoder.append(block(self.inplanes, emb_dims, 4))
         self.output_encoder = nn.ModuleList(self.output_encoder)
         self.pointer_s = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
         self.pointer_e = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
@@ -79,7 +79,8 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         q_code = self.query_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
-
+        import pdb
+        pdb.set_trace()
         attention = self.attention(d_code, q_code)
         if self.bidirection :
             (q2c_att, c2q_att) = attention

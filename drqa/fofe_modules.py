@@ -153,7 +153,7 @@ class fofe(nn.Module):
 
 class Simility(nn.Module):
     def __init__(self, planes):
-        super(Simility, self).__init__():
+        super(Simility, self).__init__()
         self.W = nn.Conv2d(planes*3, planes, 1, 1, bias=False)
         self.W.weight.data = nn.init.kaiming_normal_(self.W.weight.data)
 
@@ -163,6 +163,8 @@ class Simility(nn.Module):
         d_matrix = []
         q_matrix = []
         a_matrix = []
+        import pdb
+        pdb.set_trace()
         for i in range(q_length):
             d_matrix.append(doc)
         for j in range(d_length):
@@ -184,7 +186,7 @@ class Simility(nn.Module):
 
 class Attention(nn.Module):
     def __init__(self, planes, q2c=True, bidirection=False):
-        super(Attention, self).__init__():
+        super(Attention, self).__init__()
         self.simility = Simility(planes)
         self.q2c = q2c
         self.bidirection = bidirection

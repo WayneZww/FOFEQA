@@ -6,7 +6,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_block
-from fofe_net import FOFENet
+from .fofe_net import FOFENet
 
 
 class FOFEReader(nn.Module):
