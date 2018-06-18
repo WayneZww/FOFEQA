@@ -151,7 +151,58 @@ class fofe(nn.Module):
         return fofe_code
 
 
-"""
+class Simility(nn.Module):
+    def __init__(self, planes):
+        super(Simility, self).__init__():
+        self.W = nn.Conv2d(planes*3, planes, 1, 1, bias=False)
+        self.W.weight.data = nn.init.kaiming_normal_(self.W.weight.data)
+
+    def forward(self, doc, query):
+        d_length = doc.size(-1)
+        q_length = query.size(-1)
+        d_matrix = []
+        q_matrix = []
+        a_matrix = []
+        for i in range(q_length):
+            d_matrix.append(doc)
+        for j in range(d_length):
+            q_matrix.append(query)
+        d_matrix = torch.cat(d_matrix, dim=-1)
+        q_matrix = torch.cat(q_matrix, dim=-1)
+        s_matrix = d_matrix.bmm(q_matrix)
+        q_matrix = q_matrix.transpose(-1,-2)
+
+        a_matrix.append(d_matrix)
+        a_matrix.append(q_matrix)
+        a_matrix.append(s_matrix)
+        a_matrix = torch.cat(a_matrix, dim=1)
+        simility = self.W(a_matrix)
+        
+
+        return simility
+
+
+class Attention(nn.Module):
+    def __init__(self, planes, q2c=True, bidirection=False):
+        super(Attention, self).__init__():
+        self.simility = Simility(planes)
+        self.q2c = q2c
+        self.bidirection = bidirection
+    
+    def forward(self, doc, query):
+        simility = self.simility(doc, query)
+        if self.bidirection :
+            q2c_att = F.softmax(simility, dim=-1)
+            c2q_att = F.softmax(simility, dim=-2)
+            return (q2c_att, c2q_att)
+        elif self.q2c:
+            q2c_att = F.softmax(simility, dim=-1)
+            return q2c_att
+        else :
+            c2q_att = F.softmax(simility, dim=-2)
+            return c2q_att
+
+
         
 class FOFENet(nn.Module):
     def _make_layer(self, block, planes, blocks, block_convs, stride=1):
@@ -179,30 +230,68 @@ class FOFENet(nn.Module):
             m.weight.data.fill_(1.)
             m.bias.data.fill_(1e-4)
         
-    def __init__(self, block, emb_dims, fofe_alpha, fofe_max_length, training=True):
+    def __init__(self, block, emb_dims, fofe_alpha, fofe_max_length, att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet, self).__init__()
         self.inplanes=256
+        self.att_bidirection = att_bidirection
+        self.att_q2c = att_q2c
+
         self.doc_fofe = self._make_layer(block, emb_dims, 6, 3)
         self.query_fofe = self._make_layer(block, emb_dims, 3, 1)
-        self.fnn.apply(self.weights_init) 
-        self.doc_fofe_conv.apply(self.weights_init)
-        self.pointer_s = nn.Conv1d(emb_dims, 1, 3, 1, 1, 1, bias=False)
-        self.pointer_e = nn.Conv1d(emb_dims, 1, 3, 1, 1, 1, bias=False)
-        
-    def attention(self, q_code, d_code):
-        doc = d_code
-        q_code = torch.transpose(q_code, -1, -2)
-        d_attention = F.softmax(d_code.bmm(q_code), dim=-1)
-        return d_attention
+        self.attention = Attention(emb_dims, att_q2c, att_bidirection)
+        self.output_encoder = []
+        for i in range(3):
+            self.output_encoder.append(block(self.inplanes, planes, 4))
+        self.output_encoder = nn.ModuleList(self.output_encoder)
+        self.pointer_s = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
+        self.pointer_e = nn.Conv1d(emb_dims*2, 1, 3, 1, 1, 1, bias=False)
+
+        #initial weight
+        self.query_fofe.apply(self.weights_init) 
+        self.doc_fofe.apply(self.weights_init)
+        self.pointer_s.apply(self.weights_init) 
+        self.pointer_e.apply(self.weights_init) 
+
+    def out_encode(self, d_code):
+        s_score = []
+        e_score = []
+        idx = 0
+        for encoder in self.output_encoder:
+            idx += 1
+            out = encoder(d_code)
+            if idx == 1:
+                s_score.append(out)
+                e_score.append(out)
+            elif idx == 2:
+                s_score.append(out)
+            elif idx == 3:
+                e_score.append(out)
+
+        s_score = torch.cat(s_score, dim=1)
+        e_score = torch.cat(e_score, dim=1)
+
+         # calculate scores for begin and end point
+        s_score = self.pointer_s(s_score)
+        e_score = self.pointer_e(e_score)
+
+        return (s_score, e_score)
+
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         q_code = self.query_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
-        d_attention = self.attention
+
+        attention = self.attention(d_code, q_code)
+        if self.bidirection :
+            (q2c_att, c2q_att) = attention
+        elif self.q2c:
+            q2c_att = attention
+        else :
+            c2q_att = attention
+
+        x = d_code.bmm(q2c_att)
+        (s_score, e_score) = out_encode(x)
         
-        # calculate scores for begin and end point
-        s_score = self.pointer_s(x).squeeze(-2).squeeze(-2)
-        e_score = self.pointer_e(x).squeeze(-2).squeeze(-2)
         # mask scores
         s_score.data.masked_fill_(doc_mask.data, -float('inf'))
         e_score.data.masked_fill_(doc_mask.data, -float('inf'))
@@ -217,5 +306,4 @@ class FOFENet(nn.Module):
             e_score = F.softmax(e_score, dim=1)
 
         return s_score, e_score
-        
-"""  
+
