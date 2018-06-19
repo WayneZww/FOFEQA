@@ -64,7 +64,7 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         query_emb = torch.transpose(query_emb,-2,-1)
         doc_emb = torch.transpose(doc_emb,-2,-1)
-
+        import pdb; pdb.set_trace()
         q_code = self.query_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
         att_code = self.attention(d_code, q_code)

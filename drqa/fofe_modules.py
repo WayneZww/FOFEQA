@@ -42,6 +42,7 @@ class fofe_filter(nn.Module):
         super(fofe_filter, self).__init__()
         self.length = length
         self.channels = inplanes
+        self.alpha = alpha
         self.fofe_filter = Parameter(torch.Tensor(inplanes,1,length))
         self.fofe_filter.requires_grad_(False)
         self._init_filter(alpha, length, inverse)
@@ -54,6 +55,8 @@ class fofe_filter(nn.Module):
             self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
     
     def forward(self, x):
+        if self.alpha == 1 :
+            return x
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
 
@@ -77,7 +80,7 @@ class fofe_block(nn.Module):
     
 
 class fofe_res_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.7, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
+    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
         super(fofe_res_block, self).__init__()
         self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
@@ -96,8 +99,10 @@ class fofe_res_block(nn.Module):
     
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
         self.downsample = downsample
+        print("hhhhh")
 
     def forward(self, x): 
+        import pdb; pdb.set_trace()
         x = self.fofe_filter(x)
         residual = x
         if self.downsample is not None:
@@ -109,7 +114,7 @@ class fofe_res_block(nn.Module):
         return out
 
 class fofe_base_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.7, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
+    def __init__(self, inplanes, planes, convs=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
         super(fofe_base_block, self).__init__()
         #self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
