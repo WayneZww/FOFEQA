@@ -55,9 +55,8 @@ class fofe_filter(nn.Module):
             self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
     
     def forward(self, x):
-        if self.alpha == 1 :
+        if self.alpha == 1 or self.alpha == 0 :
             return x
-        import pdb;pdb.set_trace()
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
 
@@ -88,7 +87,7 @@ class fofe_res_block(nn.Module):
         self.conv = []
         self.conv.append(nn.Sequential(
                             nn.Conv1d(inplanes, planes,3,1,padding=fofe_length,
-                                dilation=fofe_dilation, groups=1, bias=False),
+                                dilation=fofe_length, groups=1, bias=False),
                             nn.BatchNorm1d(planes)))
 
         for i in range(1, convs):
@@ -97,51 +96,15 @@ class fofe_res_block(nn.Module):
                                 nn.BatchNorm1d(planes)))
 
         self.conv = nn.Sequential(*self.conv)
-    
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
         self.downsample = downsample
-        print("hhhhh")
 
     def forward(self, x): 
-        import pdb; pdb.set_trace()
         x = self.fofe_filter(x)
         residual = x
         if self.downsample is not None:
             residual = self.downsample(x)
         out = self.conv(x)
-        
-        out += residual
-        out = self.relu(out)
-        return out
-
-class fofe_base_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
-        super(fofe_base_block, self).__init__()
-        #self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
-        
-        self.conv = []
-        self.conv.append(nn.Sequential(
-                            nn.Conv1d(inplanes, planes,3,1,padding=fofe_length,
-                                dilation=fofe_dilation, groups=1, bias=False),
-                            nn.BatchNorm1d(planes)))
-
-        for i in range(1, convs):
-            self.conv.append(nn.Sequential(nn.LeakyReLU(0.1, inplace=True),
-                                nn.Conv1d(planes, planes, 3, 1, 1, 1, bias=False),
-                                nn.BatchNorm1d(planes)))
-
-        self.conv = nn.Sequential(*self.conv)
-    
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
-        self.downsample = downsample
-
-    def forward(self, x): 
-        #x = self.fofe_filter(x)
-        residual = x
-        if self.downsample is not None:
-            residual = self.downsample(x)
-        out = self.conv(x)
-        
         out += residual
         out = self.relu(out)
         return out

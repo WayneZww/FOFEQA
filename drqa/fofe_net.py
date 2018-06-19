@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from .fofe_modules import Attention, fofe_block, fofe_res_block
         
 class FOFENet(nn.Module):
-    def _make_layer(self, block, inplanes, planes, blocks, block_convs, stride=1, moduleList=False):
+    def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
+            fofe_alpha=0.8, fofe_max_length=3, stride=1, moduleList=False):
         downsample = None
         if stride != 1 or inplanes != planes:
             downsample = nn.Sequential(
@@ -14,25 +15,26 @@ class FOFENet(nn.Module):
             )
 
         layers = []
-        layers.append(block(inplanes, planes, block_convs, downsample=downsample))
+        layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, downsample=downsample))
         for i in range(1, blocks):
-            layers.append(block(planes, planes, block_convs))
+            layers.append(block(planes, planes, block_convs, fofe_alpha, fofe_max_length))
 
         if moduleList :
             return nn.ModuleList(layers)
         else : 
             return nn.Sequential(*layers)
         
-    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, att_bidirection=False, att_q2c=True, training=True):
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
+                    att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet, self).__init__()
         #self.inplanes=emb_dims
         self.att_bidirection = att_bidirection
         self.att_q2c = att_q2c
 
-        self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3)
-        self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1)
+        self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
+        self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1, fofe_alpha, fofe_max_length)
         self.attention = Attention(channels, att_q2c, att_bidirection)
-        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, moduleList=True)
+        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
         self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
         self.pointer_e = nn.Conv1d(channels*2, 1, 1, bias=False)
@@ -64,7 +66,6 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         query_emb = torch.transpose(query_emb,-2,-1)
         doc_emb = torch.transpose(doc_emb,-2,-1)
-        import pdb; pdb.set_trace()
         q_code = self.query_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
         att_code = self.attention(d_code, q_code)
