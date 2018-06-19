@@ -36,6 +36,7 @@ class fofe_conv1d(nn.Module):
         x = self.dilated_conv(x)
         return x
 
+    
 class fofe_filter(nn.Module):
     def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
         super(fofe_filter, self).__init__()
@@ -53,7 +54,6 @@ class fofe_filter(nn.Module):
             self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
     
     def forward(self, x):
-        import pdb;pdb.set_trace()
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
 
