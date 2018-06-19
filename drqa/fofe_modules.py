@@ -57,6 +57,7 @@ class fofe_filter(nn.Module):
     def forward(self, x):
         if self.alpha == 1 :
             return x
+        import pdb;pdb.set_trace()
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
 
