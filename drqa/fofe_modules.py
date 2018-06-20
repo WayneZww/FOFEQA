@@ -47,6 +47,7 @@ class fofe_filter(nn.Module):
         self.fofe_filter.requires_grad_(False)
         self._init_filter(alpha, length, inverse)
         self.padding = (length - 1)//2
+        self.inverse = inverse
 
     def _init_filter(self, alpha, length, inverse):
         if not inverse :
@@ -57,10 +58,40 @@ class fofe_filter(nn.Module):
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0 :
             return x
+        if self.inverse:
+            x = F.pad(x,(0, self.length-1))
+        else :
+            x = F.pad(x,(self.length-1, 0))
         x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
-                        padding=self.padding, groups=self.channels)
+                        padding=0, groups=self.channels)
 
         return x
+
+
+class fofe_encoder(nn.Module):
+    def __init__(self, emb_dim, fofe_alpha, fofe_max_length):
+        super(fofe_encoder, self).__init__()
+        self.forward_filter = []
+        self.inverse_filter = []
+        for i in range(fofe_max_length):
+            self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+
+        self.forward_filter = nn.ModuleList(self.forward_filter)
+        self.inverse_filter = nn.ModuleList(self.inverse_filter)
+
+    def forward(self, x):
+        forward_fofe = []
+        inverse_fofe = []
+        for filter in self.forward_filter:
+            forward_fofe.append(filter(x).unsqueeze(-2))
+        for filter in self.inverse_filter:
+            inverse_fofe.append(filter(x).unsqueeze(-2))
+
+        forward_fofe = torch.cat(forward_fofe, dim=-2)
+        inverse_fofe = torch.cat(inverse_fofe, dim=-2)
+
+        return forward_fofe, inverse_fofe
 
 
 class fofe_block(nn.Module):
@@ -140,7 +171,7 @@ class fofe(nn.Module):
         length = x.size(-2)
         matrix = x.new_empty(x.size(0),1,length)
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-        fofe_code = torch.bmm(matrix,x)
+        fofe_code = torch.bmm(matrix,x).squeeze(-2)
         return fofe_code
 
 

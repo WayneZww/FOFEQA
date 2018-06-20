@@ -108,6 +108,10 @@ def setup():
     # training
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
+    parser.add_argument('-sml', '--sample_min_len', type=int, default=2,
+                        help='minimum of the context length')
+    parser.add_argument('-sn', '--sample_num', type=int, default=2,
+                        help='sampling numbers for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
                              'e.g. "checkpoint_epoch_11.pt"')
@@ -129,6 +133,7 @@ def setup():
                         help='if true, `tune_partial` will be ignored.')
     parser.add_argument('--rnn_padding', action='store_true',
                         help='perform rnn padding (much slower but more accurate).')
+
     # model
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)

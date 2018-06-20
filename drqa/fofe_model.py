@@ -77,18 +77,18 @@ class DocReaderModel(object):
         #target_e = ex[8].to(self.device)
         
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda()) for e in ex[:7]]
-            target_s = Variable(ex[7].cuda())
-            target_e = Variable(ex[8].cuda())
+            inputs = [Variable(e.cuda()) for e in ex[:9]]
+            #target_s = Variable(ex[7].cuda())
+            #target_e = Variable(ex[8].cuda())
         else:
-            inputs = [Variable(e) for e in ex[:7]]
-            target_s = Variable(ex[7])
-            target_e = Variable(ex[8])
+            inputs = [Variable(e) for e in ex[:9]]
+            #target_s = Variable(ex[7])
+            #target_e = Variable(ex[8])
         
         # Run forward
-        score_s, score_e = self.network(*inputs)
+        loss = self.network(*inputs)
         # Compute loss and accuracies
-        loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
+        
         #for i in range(len(score_s)):
             #print(score_s[i])
         #    loss = F.nll_loss(score_s[i], target_s)/len(score_s) + F.nll_loss(score_e[i], target_e)/len(score_s)
