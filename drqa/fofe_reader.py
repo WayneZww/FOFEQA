@@ -45,7 +45,7 @@ class FOFEReader(nn.Module):
             doc_input_size += opt['ner_size']
         
         self.fofe_nn = FOFENet(fofe_res_block, opt['embedding_dim'], 
-                                256,
+                                128,
                                 opt['fofe_alpha'],
                                 opt['fofe_max_length'])
          #initial weight

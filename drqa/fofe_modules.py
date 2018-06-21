@@ -57,10 +57,11 @@ class fofe_filter(nn.Module):
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0 :
             return x
-        x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
+        residual = x
+        out = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
                         padding=self.padding, groups=self.channels)
-
-        return x
+        out += residual
+        return out
 
 
 class fofe_block(nn.Module):
@@ -85,7 +86,8 @@ class res_conv(nn.Module):
         super(res_conv, self).__init__()
         self.conv = nn.Conv1d(inplanes, planes, kernel_size, stride, 
                             padding, dilation, groups, bias=False)
-        self.relu = nn.LeakyReLU(0.1, inplace=False)
+        #self.relu = nn.LeakyReLU(0.1, inplace=True)
+        self.relu = nn.ReLU(inplace=True)
         self.downsample = None
         if inplanes != planes :
             self.downsample = nn.Conv1d(inplanes, planes, 1, 1, 0, groups, bias=False)
@@ -116,17 +118,15 @@ class fofe_res_block(nn.Module):
                                 dilation=fofe_length, groups=1, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
-        self.downsample = downsample
 
     def forward(self, x): 
         x = self.fofe_filter(x)
-        residual = x
-        if self.downsample is not None:
-            residual = self.downsample(x)
+        #residual = x
+        #if self.downsample is not None:
+        #    residual = self.downsample(x)
         out = self.conv(x)
-        out += residual
-        out = self.relu(out)
+        #out += residual
+        #out = self.relu(out)
         return out
 
 
