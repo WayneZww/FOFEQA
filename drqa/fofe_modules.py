@@ -79,21 +79,41 @@ class fofe_block(nn.Module):
         return x
     
 
+class res_conv(nn.Module):
+    def __init__(self, inplanes, planes, kernel_size, stride, 
+                        padding, dilation, groups, bias=False):
+        super(res_conv, self).__init__()
+        self.conv = nn.Conv1d(inplanes, planes, kernel_size, stride, 
+                            padding, dilation, groups, bias=False)
+        self.relu = nn.LeakyReLU(0.1, inplace=False)
+        self.downsample = None
+        if inplanes != planes :
+            self.downsample = nn.Conv1d(inplanes, planes, 1, 1, 0, groups, bias=False)
+
+    def forward(self, x):
+        #import pdb;pdb.set_trace()
+        residual = x
+        if self.downsample is not None :
+            residual = self.downsample(x)
+        out = F.layer_norm(x, x.size()[1:])
+        out = self.conv(out)
+        out += residual
+        out = self.relu(out)
+        return out
+
+
 class fofe_res_block(nn.Module):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
         super(fofe_res_block, self).__init__()
         self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
         self.conv = []
-        self.conv.append(nn.Sequential(
-                            nn.Conv1d(inplanes, planes,3,1,padding=fofe_length,
-                                dilation=fofe_length, groups=1, bias=False),
-                            nn.BatchNorm1d(planes)))
+        self.conv.append(res_conv(inplanes, planes, 3, 1, padding=fofe_length,
+                                dilation=fofe_length, groups=1, bias=False))
 
         for i in range(1, convs):
-            self.conv.append(nn.Sequential(nn.LeakyReLU(0.1, inplace=True),
-                                nn.Conv1d(planes, planes, 3, 1, 1, 1, bias=False),
-                                nn.BatchNorm1d(planes)))
+            self.conv.append(res_conv(planes, planes, 3, 1, padding=fofe_length,
+                                dilation=fofe_length, groups=1, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
