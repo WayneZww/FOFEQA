@@ -32,7 +32,7 @@ class FOFENet(nn.Module):
         self.att_q2c = att_q2c
 
         self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
-        self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1, fofe_alpha, fofe_max_length)
+        #self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1, fofe_alpha, fofe_max_length)
         self.attention = Attention(channels, att_q2c, att_bidirection)
         self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
@@ -66,7 +66,7 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         query_emb = torch.transpose(query_emb,-2,-1)
         doc_emb = torch.transpose(doc_emb,-2,-1)
-        q_code = self.query_fofe(query_emb)
+        q_code = self.doc_fofe(query_emb)
         d_code = self.doc_fofe(doc_emb)
         att_code = self.attention(d_code, q_code)
         
