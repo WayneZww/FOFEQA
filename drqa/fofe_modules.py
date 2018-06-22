@@ -231,11 +231,9 @@ class Simility(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, planes, q2c=True, bidirection=False):
+    def __init__(self, planes):
         super(Attention, self).__init__()
         self.simility = Simility(planes)
-        self.q2c = q2c
-        self.bidirection = bidirection
     
     def forward(self, doc, query):
         simility = self.simility(doc, query)
@@ -252,6 +250,38 @@ class Attention(nn.Module):
         output = torch.cat(output, dim=1)
 
         return output
+
+class BiAttention(nn.Module):
+    def __init__(self, planes):
+        super(BiAttention, self).__init__()
+        self.simility = Simility(planes)
+    
+    def forward(self, doc, query):
+        simility = self.simility(doc, query)
+        s1_t = F.softmax(simility,dim=-2).transpose(-1,-2)
+        s2 = F.softmax(simility, dim=-1)
+
+        d_d2q_att = torch.bmm(s1_t, query.transpose(-1,-2)).transpose(-1,-2) #batchsize x d x n
+        d_q2d_att = torch.bmm(s1_t, torch.bmm(s2, doc.transpose(-1,-2))).transpose(-1,-2) #batchsize x d x n
+
+        q_q2d_att = torch.bmm(s2, doc.transpose(-1,-2)).transpose(-1,-2) #batchsize x d x m
+        q_d2q_att = torch.bmm(s2, torch.bmm(s1_t, query.transpose(-1,-2))).transpose(-1,-2) #batchsize x d x m
+
+        d_output = []
+        d_output.append(doc)
+        d_output.append(d_d2q_att)
+        d_output.append(doc.mul(d_d2q_att))
+        d_output.append(doc.mul(d_q2d_att))
+        d_output = torch.cat(d_output, dim=1)
+
+        q_output = []
+        q_output.append(query)
+        q_output.append(q_q2d_att)
+        q_output.append(query.mul(q_q2d_att))
+        q_output.append(query.mul(q_d2q_att))
+        q_output = torch.cat(q_output, dim=1)
+
+        return d_output, q_output
 
 
 
