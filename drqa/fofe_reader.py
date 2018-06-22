@@ -5,7 +5,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_block
+from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_ln_block
 from .fofe_net import FOFENet
 
 
@@ -44,7 +44,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         
-        self.fofe_nn = FOFENet(fofe_res_block, opt['embedding_dim'], 
+        self.fofe_nn = FOFENet(fofe_res_ln_block, opt['embedding_dim'], 
                                 256,
                                 opt['fofe_alpha'],
                                 opt['fofe_max_length'])
