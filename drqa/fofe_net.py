@@ -29,7 +29,7 @@ class FOFENet(nn.Module):
 
         self.dq_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
         self.attention = Attention(channels, att_q2c, att_bidirection)
-        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
+        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length, dilation=2)
         self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
         self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)

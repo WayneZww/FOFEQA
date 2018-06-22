@@ -76,7 +76,7 @@ class fofe_res_filter(fofe_filter):
         out = self.fofe_encode(x)
         out += residual
         return out
-        
+      
 class ln_conv(nn.Module):
     def __init__(self,inplanes, planes, kernel, stride, 
                         padding=0, dilation=1, groups=1, bias=False):
@@ -106,19 +106,19 @@ class fofe_block(nn.Module):
     
 
 class fofe_res_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
+    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
+                        dilation=1, downsample=None, fofe_inverse=False):
         super(fofe_res_block, self).__init__()
         self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
         self.conv = []
         self.conv.append(nn.Sequential(
-                            nn.Conv1d(inplanes, planes,3,1,padding=fofe_length,
-                                dilation=fofe_length, groups=1, bias=False),
+                            nn.Conv1d(inplanes, planes,3,1,dilation, dilation, groups=1, bias=False),
                             nn.BatchNorm1d(planes)))
 
         for i in range(1, convs):
             self.conv.append(nn.Sequential(nn.LeakyReLU(0.1, inplace=True),
-                                nn.Conv1d(planes, planes, 3, 1, 1, 1, bias=False),
+                                nn.Conv1d(planes, planes, 3, 1, dilation, dilation, groups=1, bias=False),
                                 nn.BatchNorm1d(planes)))
 
         self.conv = nn.Sequential(*self.conv)
