@@ -1,5 +1,6 @@
 data/
 drqa/__pycache__/
+exps/*.sh
 exps/
 models/
 *.log
