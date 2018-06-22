@@ -54,13 +54,30 @@ class fofe_filter(nn.Module):
         else :
             self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
     
+    def fofe_encode(self, x):
+        out = F.pad(x, (self.length-1, 0), mode='constant', value=0)
+        out = F.conv1d(out, self.fofe_filter, bias=None, stride=1, 
+                        padding=0, groups=self.channels)
+        return out
+        
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0 :
             return x
-        x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
-                        padding=self.padding, groups=self.channels)
-
+        x = self.fofe_encode(x)
         return x
+
+
+class fofe_res_filter(fofe_filter):
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_res_filter, self).__init__(inplanes, alpha, length, inverse)
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0 :
+            return x
+        residual = x
+        out = self.fofe_encode(x)
+        out += residual
+        return out
+        
 
 
 class fofe_block(nn.Module):
@@ -72,7 +89,7 @@ class fofe_block(nn.Module):
                     nn.BatchNorm1d(planes),
                     nn.LeakyReLU(0.1, inplace=True))
 
-    def forward(self, x): 
+    def forward(self, x):
         x = self.fofe_filter(x)
         x = self.conv(x)
     

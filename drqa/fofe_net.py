@@ -31,10 +31,10 @@ class FOFENet(nn.Module):
         self.att_bidirection = att_bidirection
         self.att_q2c = att_q2c
 
-        self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
-        #self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1, fofe_alpha, fofe_max_length)
+        self.dq_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
         self.attention = Attention(channels, att_q2c, att_bidirection)
-        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
+        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length)
+        self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
         self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
         self.pointer_e = nn.Conv1d(channels*2, 1, 1, bias=False)
@@ -66,11 +66,11 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         query_emb = torch.transpose(query_emb,-2,-1)
         doc_emb = torch.transpose(doc_emb,-2,-1)
-        q_code = self.doc_fofe(query_emb)
-        d_code = self.doc_fofe(doc_emb)
+        q_code = self.dq_encoder(query_emb)
+        d_code = self.dq_encoder(doc_emb)
         att_code = self.attention(d_code, q_code)
-        
-        (s_score, e_score) = self.out_encode(att_code)
+        model_code = self.model_encoder(att_code)
+        (s_score, e_score) = self.out_encode(model_code)
         # mask scores
         s_score.data.masked_fill_(doc_mask.data, -float('inf'))
         e_score.data.masked_fill_(doc_mask.data, -float('inf'))
