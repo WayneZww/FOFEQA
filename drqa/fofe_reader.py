@@ -50,7 +50,7 @@ class FOFEReader(nn.Module):
                                 opt['fofe_max_length'])
          #initial weight
         self.fofe_nn.apply(self.weights_init)
-    
+        print(self.fofe_nn)
     
     def weights_init(self, m):
         classname = m.__class__.__name__

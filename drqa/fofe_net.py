@@ -1,23 +1,19 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import Attention, fofe_block, fofe_res_block
+from .fofe_modules import Attention, fofe_block, fofe_res_block, ln_conv
         
 class FOFENet(nn.Module):
     def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
-            fofe_alpha=0.8, fofe_max_length=3, stride=1, moduleList=False):
+            fofe_alpha=0.8, fofe_max_length=3, stride=1, dilation=1,  moduleList=False):
         downsample = None
         if stride != 1 or inplanes != planes:
-            downsample = nn.Sequential(
-                nn.Conv1d(inplanes, planes,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm1d(planes),
-            )
+            downsample = ln_conv(inplanes, planes, 1, stride, bias=False)
 
         layers = []
-        layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, downsample=downsample))
+        layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, dilation, downsample=downsample))
         for i in range(1, blocks):
-            layers.append(block(planes, planes, block_convs, fofe_alpha, fofe_max_length))
+            layers.append(block(planes, planes, block_convs, fofe_alpha, fofe_max_length, dilation))
 
         if moduleList :
             return nn.ModuleList(layers)
@@ -33,7 +29,7 @@ class FOFENet(nn.Module):
 
         self.dq_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
         self.attention = Attention(channels, att_q2c, att_bidirection)
-        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length)
+        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length, dilation=2)
         self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
         self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
