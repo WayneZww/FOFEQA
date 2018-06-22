@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
-
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):
         super(fofe_conv1d, self).__init__()
@@ -82,10 +81,11 @@ class ln_conv(nn.Module):
     def __init__(self,inplanes, planes, kernel, stride, 
                         padding=0, dilation=1, groups=1, bias=False):
         super(ln_conv, self).__init__()
+        self.layer_norm = nn.LayerNorm(inplanes)
         self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
                                 dilation, groups, bias=False)
     def forward(self, x):
-        out = F.layer_norm(x, x.size()[1:])
+        out = self.layer_norm(x.transpose(-1,-2)).transpose(-1,-2)
         out = self.conv(out)
         return out
 
