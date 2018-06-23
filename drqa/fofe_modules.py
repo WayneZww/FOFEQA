@@ -143,53 +143,12 @@ class fofe_block(nn.Module):
         x = self.conv(x)
     
         return x
-    
 
-class fofe_res_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
-                        dilation=1, downsample=None, fofe_inverse=False):
-        super(fofe_res_block, self).__init__()
-        self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
-        
-        self.conv = []
-        self.conv.append(nn.Sequential(
-                            nn.Conv1d(inplanes, planes,3,1,dilation, dilation, groups=1, bias=False),
-                            nn.BatchNorm1d(planes)))
 
-        for i in range(1, convs):
-            self.conv.append(nn.Sequential(nn.LeakyReLU(0.1, inplace=True),
-                                nn.Conv1d(planes, planes, 3, 1, dilation, dilation, groups=1, bias=False),
-                                nn.BatchNorm1d(planes)))
-
-        self.conv = nn.Sequential(*self.conv)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
-        self.downsample = downsample
-        self.apply(self.weights_init)
-
-    def weights_init(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            nn.init.kaiming_normal_(m.weight.data)
-        elif classname.find('BatchNorm') != -1:
-            m.weight.data.fill_(1.)
-            m.bias.data.fill_(1e-4)
-
-    def forward(self, x): 
-        x = self.fofe_filter(x)
-        residual = x
-        if self.downsample is not None:
-            residual = self.downsample(x)
-        out = self.conv(x)
-        out += residual
-        out = self.relu(out)
-        return out
-
-class fofe_res_conv_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
-                        dilation=1, downsample=None, fofe_inverse=False):
-        super(fofe_res_conv_block, self).__init__()
-        self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
-        
+class res_conv_block(nn.Module):
+    def __init__(self, inplanes, planes, convs=3, dilation=1,
+                     downsample=None):
+        super(res_conv_block, self).__init__()
         self.conv = []
         self.conv.append(bn_conv(inplanes, planes, 3, 1, dilation, 
                                  dilation, groups=1, bias=False))
@@ -203,7 +162,7 @@ class fofe_res_conv_block(nn.Module):
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
         self.downsample = downsample
         self.apply(self.weights_init)
-
+    
     def weights_init(self, m):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
@@ -212,8 +171,7 @@ class fofe_res_conv_block(nn.Module):
             m.weight.data.fill_(1.)
             m.bias.data.fill_(1e-4)
 
-    def forward(self, x): 
-        x = self.fofe_filter(x)
+    def res_conv(self, x):
         residual = x
         if self.downsample is not None:
             residual = self.downsample(x)
@@ -221,6 +179,37 @@ class fofe_res_conv_block(nn.Module):
         out += residual
         out = self.relu(out)
         return out
+
+    def forward(self, x): 
+        x = self.res_conv(x)
+        return x
+
+
+class fofe_res_conv_block(res_conv_block):
+    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
+                        dilation=1, downsample=None, fofe_inverse=False):
+        super(fofe_res_conv_block, self).__init__(inplanes, planes, convs,  
+                        dilation, downsample)
+        self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
+
+    def forward(self, x): 
+        x = self.fofe_filter(x)
+        x = self.res_conv(x)
+        return x
+
+
+class fofe_res_att_block(fofe_res_conv_block):
+    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
+                        dilation=1, downsample=None, fofe_inverse=False):
+        super(fofe_res_att_block, self).__init__(inplanes, planes, convs, fofe_alpha, fofe_length, 
+                        dilation, downsample, fofe_inverse)
+        self.att = SelfAttention(planes)
+
+    def forward(self, x):
+        x = self.fofe_filter(x)
+        x = self.res_conv(x)
+        x = self.att(x)
+        return x
 
 
 class fofe_linear(nn.Module):
@@ -283,7 +272,6 @@ class ASPP(nn.Module):
     
     def extra_repr(self):
         return 'planes={planes}, rates={rates}'.format(**self.__dict__)
-
 
 
 class Simility(nn.Module):
@@ -379,7 +367,7 @@ class SelfAttention(nn.Module):
         self.inter_channels = inter_channels
 
         if self.inter_channels is None:
-            self.inter_channels = in_channels // 2
+            self.inter_channels = in_channels 
             if self.inter_channels == 0:
                 self.inter_channels = 1
 
