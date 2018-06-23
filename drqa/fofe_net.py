@@ -113,9 +113,9 @@ class FOFENet_Biatt(nn.Module):
         super(FOFENet_Biatt, self).__init__()
         self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
         self.mid_attention = BiAttention(channels)
-        self.dq_h_encoder = self._make_layer(block, channels*4, channels, 2, 3, fofe_alpha, fofe_max_length)
+        self.dq_h_encoder = self._make_layer(block, channels*4, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
         self.out_attention = Attention(channels)
-        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length, dilation=2)
+        self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
         self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
         self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)

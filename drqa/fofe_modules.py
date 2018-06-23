@@ -96,6 +96,38 @@ class ln_conv(nn.Module):
         out = self.layer_norm(x.transpose(-1,-2)).transpose(-1,-2)
         out = self.conv(out)
         return out
+    
+class bn_conv(nn.Module):
+    def __init__(self,inplanes, planes, kernel, stride, 
+                        padding=0, dilation=1, groups=1, bias=False):
+        super(bn_conv, self).__init__()
+        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
+                                dilation, groups, bias=False)
+        self.bn = nn.BatchNorm1d(planes)
+    def forward(self, x):
+        out = self.conv(x)
+        out = slef.bn(out)
+        return out
+    
+class res_bn_conv(nn.Module):
+    def __init__(self,inplanes, planes, kernel, stride, 
+                        padding=0, dilation=1, groups=1, bias=False):
+        super(bn_conv, self).__init__()
+        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
+                                dilation, groups, bias=False)
+        self.bn = nn.BatchNorm1d(planes)
+        self.downsample = None
+        if inplanes != planes :
+            self.downsample = nn.Conv1d(inplanes, planes, 1, 1, 0,
+                                0, groups=1, bias=False)
+    def forward(self, x):
+        residual = x
+        if self.downsample != None :
+            residual = self.downsample(x)
+        out = self.conv(x)
+        out = slef.bn(out)
+        out += residual
+        return out
 
 class fofe_block(nn.Module):
     def __init__(self, inplanes, planes, fofe_alpha=0.8, fofe_length=3, dilation=3, fofe_inverse=False):
@@ -117,7 +149,7 @@ class fofe_res_block(nn.Module):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
                         dilation=1, downsample=None, fofe_inverse=False):
         super(fofe_res_block, self).__init__()
-        self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
+        self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
         self.conv = []
         self.conv.append(nn.Sequential(
@@ -143,19 +175,19 @@ class fofe_res_block(nn.Module):
         out = self.relu(out)
         return out
 
-class fofe_res_ln_block(nn.Module):
+class fofe_res_conv_block(nn.Module):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
                         dilation=1, downsample=None, fofe_inverse=False):
         super(fofe_res_ln_block, self).__init__()
-        self.fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
+        self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
         self.conv = []
-        self.conv.append(ln_conv(inplanes, planes, 3, 1, padding=fofe_length, 
+        self.conv.append(res_bn_conv(inplanes, planes, 3, 1, padding=fofe_length, 
                                 dilation=fofe_length, groups=1, bias=False))
 
         for i in range(1, convs):
             self.conv.append(nn.LeakyReLU(0.1, inplace=True))
-            self.conv.append(ln_conv(planes, planes, 3, 1, dilation, dilation, groups=1, bias=False))
+            self.conv.append(res_bn_conv(planes, planes, 3, 1, dilation, dilation, groups=1, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
