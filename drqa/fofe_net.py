@@ -8,7 +8,11 @@ class FOFENet(nn.Module):
             fofe_alpha=0.8, fofe_max_length=3, stride=1, dilation=1,  moduleList=False):
         downsample = None
         if stride != 1 or inplanes != planes:
-            downsample = ln_conv(inplanes, planes, 1, stride, bias=False)
+            downsample = nn.Sequential(
+                nn.Conv1d(inplanes, planes,kernel_size=1, 
+                            stride=stride, bias=False),
+                nn.BatchNorm1d(planes)
+            )
 
         layers = []
         layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, dilation, downsample=downsample))
@@ -88,8 +92,12 @@ class FOFENet_Biatt(nn.Module):
             fofe_alpha=0.8, fofe_max_length=3, stride=1, dilation=1,  moduleList=False):
         downsample = None
         if stride != 1 or inplanes != planes:
-            downsample = ln_conv(inplanes, planes, 1, stride, bias=False)
-
+            downsample = nn.Sequential(
+                nn.Conv1d(inplanes, planes,kernel_size=1, 
+                            stride=stride, bias=False),
+                nn.BatchNorm1d(planes)
+            )
+            
         layers = []
         layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, dilation, downsample=downsample))
         for i in range(1, blocks):
