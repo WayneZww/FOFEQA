@@ -44,11 +44,19 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         
-        self.fofe_nn = FOFENet(fofe_res_conv_block, opt['embedding_dim'], 
-                                256,
+        net_config = [fofe_res_conv_block, opt['embedding_dim'], 
+                                opt['planes'],
                                 opt['fofe_alpha'],
-                                opt['fofe_max_length'])
-         #initial weight
+                                opt['fofe_max_length']]
+        
+        if opt['encoder'] == 'fofe' :
+            self.fofe_nn = FOFENet(*net_config)
+        elif opt['encoder'] == 'fofe_biatt' :
+            self.fofe_nn = FOFENet_Biatt(*net_config)
+        elif opt['encoder'] == 'fofe_biatt_aspp' :
+            self.fofe_nn = FOFENet_Biatt_ASPP(*net_config)
+
+        #initial weight
         self.fofe_nn.apply(self.weights_init)
         print(self.fofe_nn)
     
