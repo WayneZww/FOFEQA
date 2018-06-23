@@ -30,9 +30,10 @@ class FOFENet(nn.Module):
         #self.inplanes=emb_dims
         self.att_bidirection = att_bidirection
         self.att_q2c = att_q2c
+        self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
+        self.dq_h_encoder = self._make_layer(block, channels, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
 
-        self.dq_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
-        self.attention = Attention(channels, att_q2c, att_bidirection)
+        self.out_attention = Attention(channels)
         self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 2, fofe_alpha, fofe_max_length, dilation=2)
         self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
 
@@ -66,9 +67,12 @@ class FOFENet(nn.Module):
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         query_emb = torch.transpose(query_emb,-2,-1)
         doc_emb = torch.transpose(doc_emb,-2,-1)
-        q_code = self.dq_encoder(query_emb)
-        d_code = self.dq_encoder(doc_emb)
-        att_code = self.attention(d_code, q_code)
+        q_l_code = self.dq_l_encoder(query_emb)
+        d_l_code = self.dq_l_encoder(doc_emb)
+
+        q_h_code = self.dq_h_encoder(q_l_code)
+        d_h_code = self.dq_h_encoder(d_l_code)
+        att_code = self.out_attention(d_h_code, q_h_code)
         model_code = self.model_encoder(att_code)
         (s_score, e_score) = self.out_encode(model_code)
         # mask scores
@@ -111,7 +115,7 @@ class FOFENet_Biatt(nn.Module):
     def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
                     att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet_Biatt, self).__init__()
-        self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
+        self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
         self.mid_attention = BiAttention(channels)
         self.dq_h_encoder = self._make_layer(block, channels*4, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
         self.out_attention = Attention(channels)
