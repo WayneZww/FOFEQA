@@ -1,7 +1,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import Attention, fofe_block, fofe_res_block, ln_conv, BiAttention
+from .fofe_modules import Attention, fofe_block, fofe_res_block, ln_conv, BiAttention, ASPP
         
 class FOFENet(nn.Module):
     def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
@@ -111,7 +111,7 @@ class FOFENet_Biatt(nn.Module):
     def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
                     att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet_Biatt, self).__init__()
-        self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
+        self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
         self.mid_attention = BiAttention(channels)
         self.dq_h_encoder = self._make_layer(block, channels*4, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
         self.out_attention = Attention(channels)
@@ -159,6 +159,42 @@ class FOFENet_Biatt(nn.Module):
         
         model_code = self.model_encoder(att_code)
         (s_score, e_score) = self.out_encode(model_code)
+        # mask scores
+        s_score.data.masked_fill_(doc_mask.data, -float('inf'))
+        e_score.data.masked_fill_(doc_mask.data, -float('inf'))
+        
+        if self.training:
+            # In training we output log-softmax for NLL
+            s_score = F.log_softmax(s_score, dim=1)
+            e_score = F.log_softmax(e_score, dim=1)
+        else:
+            # ...Otherwise 0-1 probabilities
+            s_score = F.softmax(s_score, dim=1)
+            e_score = F.softmax(e_score, dim=1)
+
+        return s_score, e_score
+    
+class FOFENet_Biatt_ASPP(FOFENet_Biatt):
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
+                    att_bidirection=False, att_q2c=True, training=True):
+        super(FOFENet_Biatt_ASPP, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, 
+                    att_bidirection, att_q2c, training)
+        self.aspp = ASPP(channels*2, [1,4,8,12])
+
+    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
+        query_emb = torch.transpose(query_emb,-2,-1)
+        doc_emb = torch.transpose(doc_emb,-2,-1)
+
+        q_l_code = self.dq_l_encoder(query_emb)
+        d_l_code = self.dq_l_encoder(doc_emb)
+        d_att, q_att = self.mid_attention(d_l_code, q_l_code)
+
+        q_h_code = self.dq_h_encoder(q_att)
+        d_h_code = self.dq_h_encoder(d_att)
+        att_code = self.out_attention(d_h_code, q_h_code)
+        model_code = self.model_encoder(att_code)
+        aspp_code = self.aspp(model_code)
+        (s_score, e_score) = self.out_encode(aspp_code)
         # mask scores
         s_score.data.masked_fill_(doc_mask.data, -float('inf'))
         e_score.data.masked_fill_(doc_mask.data, -float('inf'))

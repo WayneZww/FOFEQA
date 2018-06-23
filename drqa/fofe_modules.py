@@ -106,26 +106,26 @@ class bn_conv(nn.Module):
         self.bn = nn.BatchNorm1d(planes)
     def forward(self, x):
         out = self.conv(x)
-        out = slef.bn(out)
+        out = self.bn(out)
         return out
     
 class res_bn_conv(nn.Module):
     def __init__(self,inplanes, planes, kernel, stride, 
                         padding=0, dilation=1, groups=1, bias=False):
-        super(bn_conv, self).__init__()
+        super(res_bn_conv, self).__init__()
         self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
                                 dilation, groups, bias=False)
         self.bn = nn.BatchNorm1d(planes)
         self.downsample = None
         if inplanes != planes :
             self.downsample = nn.Conv1d(inplanes, planes, 1, 1, 0,
-                                0, groups=1, bias=False)
+                                1, groups=1, bias=False)
     def forward(self, x):
         residual = x
         if self.downsample != None :
             residual = self.downsample(x)
         out = self.conv(x)
-        out = slef.bn(out)
+        out = self.bn(out)
         out += residual
         return out
 
@@ -178,16 +178,17 @@ class fofe_res_block(nn.Module):
 class fofe_res_conv_block(nn.Module):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
                         dilation=1, downsample=None, fofe_inverse=False):
-        super(fofe_res_ln_block, self).__init__()
+        super(fofe_res_conv_block, self).__init__()
         self.fofe_filter = fofe_res_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
         
         self.conv = []
-        self.conv.append(res_bn_conv(inplanes, planes, 3, 1, padding=fofe_length, 
-                                dilation=fofe_length, groups=1, bias=False))
+        self.conv.append(bn_conv(inplanes, planes, 3, 1, dilation, 
+                                 dilation, groups=1, bias=False))
 
         for i in range(1, convs):
             self.conv.append(nn.LeakyReLU(0.1, inplace=True))
-            self.conv.append(res_bn_conv(planes, planes, 3, 1, dilation, dilation, groups=1, bias=False))
+            self.conv.append(bn_conv(planes, planes, 3, 1, dilation, 
+                                     dilation, groups=1, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
@@ -236,6 +237,34 @@ class fofe(nn.Module):
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         fofe_code = torch.bmm(matrix,x)
         return fofe_code
+    
+class ASPP(nn.Module):
+    def __init__(self, planes, rates):
+        super(ASPP, self).__init__()
+        layers = []
+        self.planes = planes
+        self.rates = rates
+        for v in rates:
+            layers.append(nn.Sequential(
+                bn_conv(planes, planes, 3, 1, v, v, groups=1, bias=False),
+                nn.LeakyReLU(0.1, inplace=True)))
+        self.dilated_conv = nn.ModuleList(layers)
+        self.aggregate = nn.Sequential(
+                bn_conv(planes*len(rates), planes, 1, 1, 0, 1, groups=1, bias=False),
+                nn.LeakyReLU(0.1, inplace=True))
+        
+    def forward(self, x):
+        out = []
+        for layer in self.dilated_conv :
+            out.append(layer(x))
+        
+        out = torch.cat(out, dim=1)
+        out = self.aggregate(out)
+        return out
+    
+    def extra_repr(self):
+        return 'planes={planes}, rates={rates}'.format(**self.__dict__)
+
 
 
 class Simility(nn.Module):
