@@ -164,6 +164,15 @@ class fofe_res_block(nn.Module):
         self.conv = nn.Sequential(*self.conv)
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
         self.downsample = downsample
+        self.apply(self.weights_init)
+
+    def weights_init(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
 
     def forward(self, x): 
         x = self.fofe_filter(x)
@@ -193,6 +202,15 @@ class fofe_res_conv_block(nn.Module):
         self.conv = nn.Sequential(*self.conv)
         self.relu = nn.LeakyReLU(0.1, inplace=True) 
         self.downsample = downsample
+        self.apply(self.weights_init)
+
+    def weights_init(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
 
     def forward(self, x): 
         x = self.fofe_filter(x)
@@ -237,7 +255,8 @@ class fofe(nn.Module):
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
         fofe_code = torch.bmm(matrix,x)
         return fofe_code
-    
+
+
 class ASPP(nn.Module):
     def __init__(self, planes, rates):
         super(ASPP, self).__init__()
@@ -279,12 +298,11 @@ class Simility(nn.Module):
         d_matrix = []
         q_matrix = []
         a_matrix = []
-        
+
         for i in range(q_length):
             d_matrix.append(doc.unsqueeze(-2))
         for j in range(d_length):
             q_matrix.append(query.unsqueeze(-1))
-        
         d_matrix = torch.cat(d_matrix, dim=-2)
         q_matrix = torch.cat(q_matrix, dim=-1)
         s_matrix = d_matrix.mul(q_matrix)
@@ -294,7 +312,6 @@ class Simility(nn.Module):
         a_matrix.append(s_matrix)
         a_matrix = torch.cat(a_matrix, dim=1)
         simility = self.W(a_matrix).squeeze(1)
-        
 
         return simility
 
@@ -319,6 +336,7 @@ class Attention(nn.Module):
         output = torch.cat(output, dim=1)
 
         return output
+
 
 class BiAttention(nn.Module):
     def __init__(self, planes):
@@ -351,6 +369,51 @@ class BiAttention(nn.Module):
         q_output = torch.cat(q_output, dim=1)
 
         return d_output, q_output
+
+
+class SelfAttention(nn.Module):
+    def __init__(self, in_channels, inter_channels=None):
+        super(SelfAttention, self).__init__()
+
+        self.in_channels = in_channels
+        self.inter_channels = inter_channels
+
+        if self.inter_channels is None:
+            self.inter_channels = in_channels // 2
+            if self.inter_channels == 0:
+                self.inter_channels = 1
+
+        self.Wv = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
+                         kernel_size=1, stride=1, padding=0)
+        self.Wq = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
+                            kernel_size=1, stride=1, padding=0)
+        self.Wk = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
+                            kernel_size=1, stride=1, padding=0)
+
+        self.W = nn.Sequential(
+            nn.Conv1d(in_channels=self.inter_channels, out_channels=self.in_channels,
+                    kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm1d(self.in_channels)
+        )
+        self.Wv.weight.data = nn.init.kaiming_normal_(self.Wv.weight.data)
+        self.Wq.weight.data = nn.init.kaiming_normal_(self.Wq.weight.data)
+        self.Wk.weight.data = nn.init.kaiming_normal_(self.Wk.weight.data)
+        nn.init.constant(self.W[1].weight, 0)
+        nn.init.constant(self.W[1].bias, 0)
+
+    def forward(self, x):
+        v_x = self.Wv(x).transpose(-1, -2)
+        q_x = self.Wq(x).transpose(-1, -2)
+        k_x = self.Wk(x)
+        s = torch.bmm(q_x, k_x)
+        similirity = F.softmax(s, dim=-2)
+
+        y = torch.matmul(similirity, v_x).transpose(-1,-2).contiguous()
+        W_y = self.W(y)
+        output = W_y + x
+
+        return output
+
 
 
 

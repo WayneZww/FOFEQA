@@ -6,7 +6,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_block, fofe_res_conv_block
-from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP
+from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP, FOFENet_Biatt_Selfatt_ASPP
 
 
 class FOFEReader(nn.Module):
@@ -55,18 +55,9 @@ class FOFEReader(nn.Module):
             self.fofe_nn = FOFENet_Biatt(*net_config)
         elif opt['encoder'] == 'fofe_biatt_aspp' :
             self.fofe_nn = FOFENet_Biatt_ASPP(*net_config)
-
-        #initial weight
-        self.fofe_nn.apply(self.weights_init)
+        elif opt['encoder'] == 'fofe_biatt_selfatt_aspp' :
+            self.fofe_nn = FOFENet_Biatt_Selfatt_ASPP(*net_config)
         print(self.fofe_nn)
-    
-    def weights_init(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            nn.init.kaiming_normal_(m.weight.data)
-        elif classname.find('BatchNorm') != -1:
-            m.weight.data.fill_(1.)
-            m.bias.data.fill_(1e-4)
         
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask):
         """Inputs:

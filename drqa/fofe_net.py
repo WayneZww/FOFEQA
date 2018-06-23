@@ -1,7 +1,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import Attention, fofe_block, fofe_res_block, ln_conv, BiAttention, ASPP
+from .fofe_modules import Attention, fofe_block, fofe_res_block, ln_conv, BiAttention, ASPP, SelfAttention
         
 class FOFENet(nn.Module):
     def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
@@ -103,16 +103,8 @@ class FOFENet_Biatt(FOFENet):
     def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
                     att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet_Biatt, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, training=True)
-        #self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
         self.mid_attention = BiAttention(channels)
         self.dq_h_encoder = self._make_layer(block, channels*4, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
-        #self.out_attention = Attention(channels)
-        #self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
-        #self.output_encoder = self._make_layer(block, channels*2, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
-
-        #self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
-        #self.pointer_e = nn.Conv1d(channels*2, 1, 1, bias=False)
-
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         q_l_code, d_l_code = self.l_encode(query_emb, doc_emb)
@@ -135,6 +127,24 @@ class FOFENet_Biatt_ASPP(FOFENet_Biatt):
         d_att, q_att = self.mid_attention(d_l_code, q_l_code)
         model_code = self.h_encode(q_att, d_att)
         aspp_code = self.aspp(model_code)
+        s_score, e_score = self.out_encode(aspp_code)
+        s_score, e_score = self.output(s_score, e_score, doc_mask)
+        
+        return s_score, e_score
+
+class FOFENet_Biatt_Selfatt_ASPP(FOFENet_Biatt_ASPP):
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
+                    att_bidirection=False, att_q2c=True, training=True):
+        super(FOFENet_Biatt_Selfatt_ASPP, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, 
+                    att_bidirection, att_q2c, training)
+        self.self_attention = SelfAttention(channels*2)
+
+    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
+        q_l_code, d_l_code = self.l_encode(query_emb, doc_emb)
+        d_att, q_att = self.mid_attention(d_l_code, q_l_code)
+        model_code = self.h_encode(q_att, d_att)
+        att_code = self.self_attention(model_code)
+        aspp_code = self.aspp(att_code)
         s_score, e_score = self.out_encode(aspp_code)
         s_score, e_score = self.output(s_score, e_score, doc_mask)
         
@@ -211,9 +221,6 @@ class FOFE_NN(nn.Module):
             e_score = F.softmax(e_score, dim=1)
 
         return s_score, e_score
-
-
-
 
     
 class FOFE_NN_att(nn.Module):
