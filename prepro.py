@@ -85,7 +85,7 @@ def main():
         'embedding': embeddings.tolist(),
         'wv_cased': args.wv_cased,
     }
-    with open('./data/SQuAD/meta.msgpack', 'wb') as f:
+    with open(args.target_meta, 'wb') as f:
         msgpack.dump(meta, f)
     result = {
         'train': train,
@@ -95,14 +95,14 @@ def main():
     #        question_id, context, context_token_span, answer_start, answer_end
     # dev:   id, context_id, context_features, tag_id, ent_id,
     #        question_id, context, context_token_span, answer
-    with open('./data/SQuAD/data.msgpack', 'wb') as f:
+    with open(args.target_data, 'wb') as f:
         msgpack.dump(result, f)
     if args.sample_size:
         sample = {
             'train': train[:args.sample_size],
             'dev': dev[:args.sample_size]
         }
-        with open('./data/SQuAD/sample.msgpack', 'wb') as f:
+        with open(args.target_sample, 'wb') as f:
             msgpack.dump(sample, f)
     log.info('saved to disk.')
 
@@ -110,9 +110,15 @@ def setup():
     parser = argparse.ArgumentParser(
         description='Preprocessing data files, about 10 minitues to run.'
     )
-    parser.add_argument('--trn_file', default='./data/SQuAD/train-v1.1.json',
+    parser.add_argument('--trn_file', default='./data/SQuAD/train-v2.0.json',
                         help='path to train file.')
-    parser.add_argument('--dev_file', default='./data/SQuAD/dev-v1.1.json',
+    parser.add_argument('--dev_file', default='./data/SQuAD/dev-v2.0.json',
+                        help='path to dev file.')
+    parser.add_argument('--target_meta', default='./data/SQuAD/meta-2.0.msgpack',
+                        help='path to dev file.')
+    parser.add_argument('--target_data', default='./data/SQuAD/data-2.0.msgpack',
+                        help='path to dev file.')
+    parser.add_argument('--target_sample', default='./data/SQuAD/sample-2.0.msgpack',
                         help='path to dev file.')
     parser.add_argument('--wv_file', default='./data/glove/glove.840B.300d.txt',
                         help='path to word vector file.')
@@ -126,7 +132,7 @@ def setup():
                              'Otherwise consider question words first.')
     parser.add_argument('--sample_size', type=int, default=0,
                         help='size of sample data (for debugging).')
-    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count(), 16),
+    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count()-8, 16),
                         help='number of threads for preprocessing.')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='batch size for multiprocess tokenizing and tagging.')
