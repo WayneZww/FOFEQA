@@ -44,8 +44,12 @@ class fofe_filter(nn.Module):
         self.alpha = alpha
         self.fofe_filter = Parameter(torch.Tensor(inplanes,1,length))
         self.fofe_filter.requires_grad_(False)
+        self.inverse = inverse
+        if inverse :
+            self.padding = (0, self.length-1)
+        else :
+            self.padding = (self.length-1, 0)
         self._init_filter(alpha, length, inverse)
-        self.padding = (length - 1)//2
 
     def _init_filter(self, alpha, length, inverse):
         if not inverse :
@@ -54,7 +58,7 @@ class fofe_filter(nn.Module):
             self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
     
     def fofe_encode(self, x):
-        out = F.pad(x, (self.length-1, 0), mode='constant', value=0)
+        out = F.pad(x, self.padding, mode='constant', value=0)
         out = F.conv1d(out, self.fofe_filter, bias=None, stride=1, 
                         padding=0, groups=self.channels)
         return out
@@ -63,7 +67,11 @@ class fofe_filter(nn.Module):
         if self.alpha == 1 or self.alpha == 0 :
             return x
         x = self.fofe_encode(x)
-        return x
+        return 
+    
+    def extra_repr(self):
+        return 'channels={channels}, alpha={alpha}, length={length}， ' \
+            'inverse={inverse}, pad={padding}'.format(**self.__dict__)
 
 
 class fofe_res_filter(fofe_filter):
