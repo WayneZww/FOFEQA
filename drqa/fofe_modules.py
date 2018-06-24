@@ -403,5 +403,19 @@ class SelfAttention(nn.Module):
         return output
 
 
+class reg_loss(nn.Module):
+    def __init__(self, sigma):
+        super(reg_loss, self).__init__()
+        self.sigma = sigma
+
+    def forward(self, x, target):
+        import pdb;pdb.set_trace()
+        gmap = target.new_zeros(shape)
+        gmap.copy_(torch.arange(torch.arange(shape[1])))
+        # x:csub(mean):pow(2):add(1):mul(-1):div(2*math.pow(sigma,2))
+        gmap.sub(mean).pow(2).add(1).mul(-1).div(2*torch.pow(sigma,2))
+        gmap = torch.exp(gmap)
+        loss = F.mse_loss(score_s, gmap)
+        return loss
 
 

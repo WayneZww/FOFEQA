@@ -136,12 +136,11 @@ def setup():
     parser.add_argument('--block', default='fofe_res_att_block',
                         help='encoder framework to use')
     parser.add_argument('--planes', type=int, default=256,
-                        help='number of planes in each block')                  
-    parser.add_argument('--num_features', type=int, default=4)
-    parser.add_argument('--pos', type=str2bool, nargs='?', const=True, default=True,
-                        help='use pos tags as a feature.')
-    parser.add_argument('--ner', type=str2bool, nargs='?', const=True, default=True,
-                        help='use named entity tags as a feature.')
+                        help='number of planes in each block')
+    parser.add_argument('--regloss_ratio', type=float, default=0,
+                        help='ratio of gaussian distribution regression loss(0 if not use).')  
+    parser.add_argument('--regloss_sigma', type=float, default=0,
+                        help='sigma of gaussian distribution regression loss(0 if not use).')               
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', type=float, default=0.8)

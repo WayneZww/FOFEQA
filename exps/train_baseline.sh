@@ -14,10 +14,11 @@ python -u train_fofe.py --model_dir ./exps/${name} \
                 --fix_embeddings \
                 --tune_partial 0 \
                 --batch_size 2 \
-                --encoder fofe_biatt_selfatt_aspp \
+                --encoder fofe_biatt_nonlocal_aspp \
                 --planes 256 \
                 --fofe_alpha ${fofe_alpha} \
                 --fofe_max_length ${fofe_len} \
-                --pos False --ner False \
+                --regloss_ratio 0.5 \
+                --regloss_sigma 6 \
                 --optimizer adamax \
                 2>&1|tee ./exps/${name}/train-${name}-$now.log

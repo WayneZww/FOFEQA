@@ -5,7 +5,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_att_block, fofe_res_conv_block
+from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_att_block, fofe_res_conv_block, reg_loss
 from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP, FOFENet_Biatt_Selfatt_ASPP
 
 
@@ -36,11 +36,16 @@ class FOFEReader(nn.Module):
             self.embedding = nn.Embedding(opt['vocab_size'],
                                           opt['embedding_dim'],
                                           padding_idx=padding_idx)
+        self.reg_loss = None
+        if self.opt['regloss_ratio'] > 0:
+            self.reg_loss = reg_loss(opt['regloss_sigma'])
 
         if opt['block'] == 'fofe_res_att_block':
             block = fofe_res_att_block
         elif opt['block'] == 'fofe_res_conv_block':
             block = fofe_res_conv_block
+        else:
+            raise Exception('Block architecture undefined!')
         
         net_config = [block, opt['embedding_dim'], 
                                 opt['planes'],
@@ -55,9 +60,12 @@ class FOFEReader(nn.Module):
             self.fofe_nn = FOFENet_Biatt_ASPP(*net_config)
         elif opt['encoder'] == 'fofe_biatt_nonlocal_aspp' :
             self.fofe_nn = FOFENet_Biatt_Selfatt_ASPP(*net_config)
+        else :
+            raise Exception('Architecture undefined!')
         print(self.fofe_nn)
         
-    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask):
+    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, 
+                query, query_mask, target_s=None, target_e=None):
         """Inputs:
         doc = document word indices             [batch * len_d]
         doc_f = document word features indices  [batch * len_d * nfeat]
@@ -76,16 +84,18 @@ class FOFEReader(nn.Module):
                                            training=self.training)
             query_emb = nn.functional.dropout(query_emb, p=self.opt['dropout_emb'],
                                            training=self.training)
-
-        doc_input_list = [doc_emb, doc_f]
-        if self.opt['pos']:
-            doc_input_list.append(doc_pos)
-        if self.opt['ner']:
-            doc_input_list.append(doc_ner)
-        doc_input = torch.cat(doc_input_list, 2)
         
         # Predict start and end positions
-        start_scores, end_scores = self.fofe_nn(query_emb, query_mask, doc_emb, doc_mask)
-        return start_scores, end_scores
+        score_s, score_e = self.fofe_nn(query_emb, query_mask, doc_emb, doc_mask)
+
+        # Compute loss and accuracies
+        if self.training :
+            loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
+            if self.opt['regloss_ratio'] > 0:
+                reg_loss = self.reg_loss(score_s, target_s) + self.reg_loss(score_e, target_e)
+                loss += self.opt['regloss_ratio']*reg_loss
+            return loss
+        else :
+            return score_s, score_e
 
 
