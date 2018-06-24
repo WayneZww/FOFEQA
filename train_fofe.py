@@ -133,6 +133,8 @@ def setup():
     # model
     parser.add_argument('--encoder', default='fofe_biatt_aspp',
                         help='encoder framework to use')
+    parser.add_argument('--block', default='fofe_res_att_block',
+                        help='encoder framework to use')
     parser.add_argument('--planes', type=int, default=256,
                         help='number of planes in each block')                  
     parser.add_argument('--num_features', type=int, default=4)

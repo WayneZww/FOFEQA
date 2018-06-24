@@ -37,14 +37,12 @@ class FOFEReader(nn.Module):
                                           opt['embedding_dim'],
                                           padding_idx=padding_idx)
 
-        # Input size to FOFE_NN: word emb + question emb + manual features
-        doc_input_size = opt['embedding_dim'] + opt['num_features']
-        if opt['pos']:
-            doc_input_size += opt['pos_size']
-        if opt['ner']:
-            doc_input_size += opt['ner_size']
+        if opt['block'] == 'fofe_res_att_block':
+            block = fofe_res_att_block
+        elif opt['block'] == 'fofe_res_conv_block':
+            block = fofe_res_conv_block
         
-        net_config = [fofe_res_att_block, opt['embedding_dim'], 
+        net_config = [block, opt['embedding_dim'], 
                                 opt['planes'],
                                 opt['fofe_alpha'],
                                 opt['fofe_max_length']]
@@ -55,7 +53,7 @@ class FOFEReader(nn.Module):
             self.fofe_nn = FOFENet_Biatt(*net_config)
         elif opt['encoder'] == 'fofe_biatt_aspp' :
             self.fofe_nn = FOFENet_Biatt_ASPP(*net_config)
-        elif opt['encoder'] == 'fofe_biatt_selfatt_aspp' :
+        elif opt['encoder'] == 'fofe_biatt_nonlocal_aspp' :
             self.fofe_nn = FOFENet_Biatt_Selfatt_ASPP(*net_config)
         print(self.fofe_nn)
         
