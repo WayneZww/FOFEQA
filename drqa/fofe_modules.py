@@ -386,8 +386,8 @@ class SelfAttention(nn.Module):
         self.Wv.weight.data = nn.init.kaiming_normal_(self.Wv.weight.data)
         self.Wq.weight.data = nn.init.kaiming_normal_(self.Wq.weight.data)
         self.Wk.weight.data = nn.init.kaiming_normal_(self.Wk.weight.data)
-        nn.init.constant(self.W[1].weight, 0)
-        nn.init.constant(self.W[1].bias, 0)
+        nn.init.constant_(self.W[1].weight, 0)
+        nn.init.constant_(self.W[1].bias, 0)
 
     def forward(self, x):
         v_x = self.Wv(x).transpose(-1, -2)
@@ -404,19 +404,14 @@ class SelfAttention(nn.Module):
 
 
 class reg_loss(nn.Module):
-    def __init__(self, sigma):
+    def __init__(self):
         super(reg_loss, self).__init__()
-        self.sigma = Parameter(torch.Tensor([sigma]))
-        self.sigma.requires_grad_(False)
-        self.eff = torch.log(self.sigma*torch.sqrt(torch.Tensor([2*math.pi])))
         self.mse_loss = nn.MSELoss()
-
-    def forward(self, log_soft_x, target):
+    def forward(self, log_soft_x, target, sig):
         shape = log_soft_x.shape
+        sigma = target.new_full((1,), sig, dtype=torch.float)
         distribution = target.new_zeros(shape, dtype=torch.float)
         distribution.copy_(torch.range(0,shape[1]-1))
-        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*self.sigma.pow(2))
-        #print(exponent)
-        #loss = self.mse_loss(log_soft_x, exponent)
-        return exponent
-        #return loss
+        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*sigma.pow(2))
+        loss = self.mse_loss(log_soft_x, exponent)
+        return loss

@@ -13,6 +13,7 @@ import logging
 from torch.autograd import Variable
 from .utils import AverageMeter
 from .fofe_reader import FOFEReader
+from .fofe_modules import reg_loss
 
 # Modification:
 #   - change the logger name
@@ -52,6 +53,7 @@ class DocReaderModel(object):
         # Building optimizer.
         self.opt_state_dict = state_dict['optimizer'] if state_dict else None
         self.build_optimizer()
+        self.reg_crit = reg_loss()
 
     def build_optimizer(self):
         parameters = [p for p in self.network.parameters() if p.requires_grad]
@@ -73,16 +75,24 @@ class DocReaderModel(object):
 
         # Transfer to GPU        
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda()) for e in ex[:9]]
-            #target_s = Variable(ex[7].cuda())
-            #target_e = Variable(ex[8].cuda())
+            inputs = [Variable(e.cuda()) for e in ex[:7]]
+            target_s = Variable(ex[7].cuda())
+            target_e = Variable(ex[8].cuda())
         else:
-            inputs = [Variable(e) for e in ex[:9]]
-            #target_s = Variable(ex[7])
-            #target_e = Variable(ex[8])
+            inputs = [Variable(e) for e in ex[:7]]
+            target_s = Variable(ex[7])
+            target_e = Variable(ex[8])
         
         # Run forward
-        loss = self.network(*inputs)
+        score_s, score_e = self.network(*inputs)
+        
+        # Compute loss and accuracies
+        loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
+        if self.opt['regloss_ratio'] > 0:
+            reg_loss = self.reg_crit(score_s, target_s, self.opt['regloss_sigma']) \
+                        + self.reg_crit(score_e, target_e, self.opt['regloss_sigma'])
+            loss += self.opt['regloss_ratio']*reg_loss
+
         self.train_loss.update(loss.item())
         # Clear gradients and run backward
         self.optimizer.zero_grad()

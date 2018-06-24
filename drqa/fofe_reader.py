@@ -36,9 +36,6 @@ class FOFEReader(nn.Module):
             self.embedding = nn.Embedding(opt['vocab_size'],
                                           opt['embedding_dim'],
                                           padding_idx=padding_idx)
-        self.reg_loss = None
-        if self.opt['regloss_ratio'] > 0:
-            self.reg_loss = reg_loss(opt['regloss_sigma'])
 
         if opt['block'] == 'fofe_res_att_block':
             block = fofe_res_att_block
@@ -64,8 +61,7 @@ class FOFEReader(nn.Module):
             raise Exception('Architecture undefined!')
         #print(self.fofe_nn)
         
-    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, 
-                query, query_mask, target_s=None, target_e=None):
+    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask):
         """Inputs:
         doc = document word indices             [batch * len_d]
         doc_f = document word features indices  [batch * len_d * nfeat]
@@ -87,15 +83,7 @@ class FOFEReader(nn.Module):
         
         # Predict start and end positions
         score_s, score_e = self.fofe_nn(query_emb, query_mask, doc_emb, doc_mask)
-
-        # Compute loss and accuracies
-        if self.training :
-            loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
-            if self.opt['regloss_ratio'] > 0:
-                reg_loss = self.reg_loss(score_s, target_s) + self.reg_loss(score_e, target_e)
-                loss += self.opt['regloss_ratio']*reg_loss
-            return loss
-        else :
-            return score_s, score_e
+        
+        return score_s, score_e
 
 
