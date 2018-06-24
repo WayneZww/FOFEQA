@@ -406,16 +406,17 @@ class SelfAttention(nn.Module):
 class reg_loss(nn.Module):
     def __init__(self, sigma):
         super(reg_loss, self).__init__()
-        self.sigma = sigma
+        self.sigma = Parameter(torch.Tensor([sigma]))
+        self.sigma.requires_grad_(False)
+        self.eff = torch.log(self.sigma*torch.sqrt(torch.Tensor([2*math.pi])))
+        self.mse_loss = nn.MSELoss()
 
-    def forward(self, x, target):
-        import pdb;pdb.set_trace()
-        gmap = target.new_zeros(shape)
-        gmap.copy_(torch.arange(torch.arange(shape[1])))
-        # x:csub(mean):pow(2):add(1):mul(-1):div(2*math.pow(sigma,2))
-        gmap.sub(mean).pow(2).add(1).mul(-1).div(2*torch.pow(sigma,2))
-        gmap = torch.exp(gmap)
-        loss = F.mse_loss(score_s, gmap)
-        return loss
-
-
+    def forward(self, log_soft_x, target):
+        shape = log_soft_x.shape
+        distribution = target.new_zeros(shape, dtype=torch.float)
+        distribution.copy_(torch.range(0,shape[1]-1))
+        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*self.sigma.pow(2))
+        #print(exponent)
+        #loss = self.mse_loss(log_soft_x, exponent)
+        return exponent
+        #return loss

@@ -88,6 +88,10 @@ class DocReaderModel(object):
         self.optimizer.zero_grad()
         loss.backward()
 
+        # Clip gradients it helps converges, but no need for cnn
+        torch.nn.utils.clip_grad_norm_(self.network.parameters(),
+                                       self.opt['grad_clipping'])
+
         # Update parameters
         self.optimizer.step()
         self.updates += 1

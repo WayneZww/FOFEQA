@@ -62,7 +62,7 @@ class FOFEReader(nn.Module):
             self.fofe_nn = FOFENet_Biatt_Selfatt_ASPP(*net_config)
         else :
             raise Exception('Architecture undefined!')
-        print(self.fofe_nn)
+        #print(self.fofe_nn)
         
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, 
                 query, query_mask, target_s=None, target_e=None):

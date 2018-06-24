@@ -139,7 +139,7 @@ def setup():
                         help='number of planes in each block')
     parser.add_argument('--regloss_ratio', type=float, default=0,
                         help='ratio of gaussian distribution regression loss(0 if not use).')  
-    parser.add_argument('--regloss_sigma', type=float, default=0,
+    parser.add_argument('--regloss_sigma', type=float, default=5,
                         help='sigma of gaussian distribution regression loss(0 if not use).')               
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
