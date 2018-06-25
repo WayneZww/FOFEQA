@@ -92,7 +92,7 @@ class fofe_bi_res(nn.Module):
         self.forward_filter = fofe_filter(inplanes, alpha, length, False)
         self.inverse_filter = fofe_filter(inplanes, alpha, length, True)
         self.W = nn.Conv1d(inplanes*2, inplanes, 1, 1, bias=False)
-        nn.init.constant_(self.W.weight, 0)
+      #  nn.init.constant_(self.W.weight, 0)
 
     def forward(self, x):
         residual = x

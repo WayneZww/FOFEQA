@@ -175,21 +175,20 @@ class SelfAttention(nn.Module):
 
 
 class reg_loss(nn.Module):
-    def __init__(self, sigma):
+    def __init__(self):
         super(reg_loss, self).__init__()
         self.mse_loss = nn.MSELoss()
-        self.sigma = torch.Tensor([sigma])
-        #self.sigma = Parameter(torch.Tensor([sigma]))
-        #self.sigma.requires_grad_(False)
-        self.eff = self.sigma*torch.sqrt(torch.Tensor([2*math.pi]))
 
-    def forward(self, log_soft_x, target):
+    def forward(self, log_soft_x, target,  sig):
         shape = log_soft_x.shape
+        sigma = target.new_full((1,), sig, dtype=torch.float)
         distribution = target.new_zeros(shape, dtype=torch.float)
         distribution.copy_(torch.range(0,shape[1]-1))
-        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*self.sigma.pow(2))
+        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*sigma.pow(2))
         gaussian = torch.exp(exponent)
-        if self.sigma < 1:
-            gaussian = gaussian/self.eff
+        
+        if sig < 1:
+            eff = sigma*torch.sqrt(torch.Tensor([2*math.pi]))
+            gaussian = gaussian/eff
         loss = self.mse_loss(torch.exp(log_soft_x), gaussian)
         return loss

@@ -54,7 +54,7 @@ class DocReaderModel(object):
         # Building optimizer.
         self.opt_state_dict = state_dict['optimizer'] if state_dict else None
         self.build_optimizer()
-        self.reg_crit = reg_loss(opt['regloss_sigma'])
+        self.reg_crit = reg_loss()
 
     def build_optimizer(self):
         parameters = [p for p in self.network.parameters() if p.requires_grad]
@@ -90,8 +90,8 @@ class DocReaderModel(object):
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         if self.opt['regloss_ratio'] > 0 and loss.item() > 4:
-            reg_loss = self.reg_crit(score_s, target_s) \
-                        + self.reg_crit(score_e, target_e)
+            reg_loss = self.reg_crit(score_s, target_s, self.opt['regloss_sigma']) \
+                        + self.reg_crit(score_e, target_e, self.opt['regloss_sigma'])
             loss += self.opt['regloss_ratio']*reg_loss
 
         self.train_loss.update(loss.item())
