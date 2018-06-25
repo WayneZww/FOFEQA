@@ -4,6 +4,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
+class bn_conv(nn.Module):
+    def __init__(self,inplanes, planes, kernel, stride, 
+                        padding=0, dilation=1, groups=1, bias=False):
+        super(bn_conv, self).__init__()
+        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
+                                dilation, groups, bias=False)
+        self.bn = nn.BatchNorm1d(planes)
+    def forward(self, x):
+        out = self.conv(x)
+        out = self.bn(out)
+        return out
+
+
 class ASPP(nn.Module):
     def __init__(self, planes, rates):
         super(ASPP, self).__init__()

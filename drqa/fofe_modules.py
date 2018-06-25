@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
+from .modules import bn_conv
 
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):
@@ -101,19 +102,6 @@ class fofe_bi_res(nn.Module):
         fofe_code = torch.cat(fofe_code, dim=1)
         out = self.W(fofe_code)
         out += residual
-        return out
-
-    
-class bn_conv(nn.Module):
-    def __init__(self,inplanes, planes, kernel, stride, 
-                        padding=0, dilation=1, groups=1, bias=False):
-        super(bn_conv, self).__init__()
-        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
-                                dilation, groups, bias=False)
-        self.bn = nn.BatchNorm1d(planes)
-    def forward(self, x):
-        out = self.conv(x)
-        out = self.bn(out)
         return out
 
 
