@@ -5,7 +5,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe_linear, fofe_block, fofe_res_att_block, fofe_res_conv_block, reg_loss
+from .fofe_modules import fofe_conv1d, fofe_linear, fofe_res_att_block, fofe_res_conv_block, fofe_bi_res_block 
 from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP, FOFENet_Biatt_Selfatt_ASPP
 
 
@@ -39,8 +39,10 @@ class FOFEReader(nn.Module):
 
         if opt['block'] == 'fofe_res_att_block':
             block = fofe_res_att_block
-        elif opt['block'] == 'fofe_res_conv_block':
+        elif opt['block'] == 'fofe_res_block':
             block = fofe_res_conv_block
+        elif opt['block'] == 'fofe_bi_res_block':
+            block = fofe_bi_res_block
         else:
             raise Exception('Block architecture undefined!')
         

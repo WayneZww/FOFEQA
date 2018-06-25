@@ -1,7 +1,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import Attention, fofe_block, fofe_res_att_block, ln_conv, BiAttention, ASPP, SelfAttention
+from .modules import Attention, BiAttention, ASPP, SelfAttention
         
 class FOFENet(nn.Module):
     def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
