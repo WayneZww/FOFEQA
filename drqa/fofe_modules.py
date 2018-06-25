@@ -413,5 +413,6 @@ class reg_loss(nn.Module):
         distribution = target.new_zeros(shape, dtype=torch.float)
         distribution.copy_(torch.range(0,shape[1]-1))
         exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*sigma.pow(2))
-        loss = self.mse_loss(log_soft_x, exponent)
+        loss = self.mse_loss(torch.exp(log_soft_x), torch.exp(exponent))
+        #loss = self.mse_loss(log_soft_x, exponent)
         return loss

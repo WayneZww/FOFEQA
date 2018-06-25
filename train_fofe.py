@@ -21,7 +21,6 @@ def main():
     train, dev, dev_y, embedding, opt = load_data(vars(args))
     log.info(opt)
     log.info('[Data loaded.]')
-    torch.backends.cudnn.deterministic = True
 
     if args.resume:
         log.info('[loading previous model...]')

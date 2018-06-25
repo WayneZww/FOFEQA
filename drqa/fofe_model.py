@@ -39,7 +39,8 @@ class DocReaderModel(object):
         self.train_loss = AverageMeter()
         if state_dict:
             self.train_loss.load(state_dict['loss'])
-
+        torch.backends.cudnn.deterministic = True
+        
         # Building network.
         self.network = FOFEReader(opt, embedding=embedding)
         if state_dict:

@@ -104,7 +104,7 @@ class FOFENet_Biatt(FOFENet):
                     att_bidirection=False, att_q2c=True, training=True):
         super(FOFENet_Biatt, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, training=True)
         self.mid_attention = BiAttention(channels)
-        self.dq_h_encoder = self._make_layer(block, channels*4, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
+        self.dq_h_encoder = self._make_layer(block, channels*4, channels, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
         q_l_code, d_l_code = self.l_encode(query_emb, doc_emb)
