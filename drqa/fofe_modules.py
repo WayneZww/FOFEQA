@@ -84,18 +84,25 @@ class fofe_res_filter(fofe_filter):
         out = self.fofe_encode(x)
         out += residual
         return out
-      
-class ln_conv(nn.Module):
-    def __init__(self,inplanes, planes, kernel, stride, 
-                        padding=0, dilation=1, groups=1, bias=False):
-        super(ln_conv, self).__init__()
-        self.layer_norm = nn.LayerNorm(inplanes)
-        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
-                                dilation, groups, bias=False)
+
+class fofe_bi_res(nn.Module):
+    def __init__(self, inplanes, alpha=0.8, length=3):
+        super(fofe_bi_res, self).__init__()
+        self.forward_filter = fofe_filter(inplanes, alpha, length, False)
+        self.inverse_filter = fofe_filter(inplanes, alpha, length, True)
+        self.W = nn.Conv1d(inplanes*2, inplanes, 1, 1, bias=False)
+        nn.init.constant_(self.W.weight, 0)
+
     def forward(self, x):
-        out = self.layer_norm(x.transpose(-1,-2)).transpose(-1,-2)
-        out = self.conv(out)
+        residual = x
+        fofe_code = []
+        fofe_code.append(self.forward_filter(x))
+        fofe_code.append(self.inverse_filter(x))
+        fofe_code = torch.cat(fofe_code, dim=1)
+        out = self.W(fofe_code)
+        out += residual
         return out
+
     
 class bn_conv(nn.Module):
     def __init__(self,inplanes, planes, kernel, stride, 
