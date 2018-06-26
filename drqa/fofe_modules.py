@@ -86,6 +86,23 @@ class fofe_res_filter(fofe_filter):
         out += residual
         return out
 
+class fofe_res_linear_filter(fofe_filter):
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_res_linear_filter, self).__init__(inplanes, alpha, length, inverse)
+        self.W = nn.Conv1d(inplanes, inplanes, 1, 1, bias=False)
+        nn.init.constant_(self.W.weight, 0)
+        nn.init.constant_(self.W.bias, 0)
+
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0 :
+            return x
+        residual = x
+        out = self.fofe_encode(x)
+        out = self.W(out)
+        out += residual
+        return out
+
+
 class fofe_bi_res(nn.Module):
     def __init__(self, inplanes, alpha=0.8, length=3):
         super(fofe_bi_res, self).__init__()
