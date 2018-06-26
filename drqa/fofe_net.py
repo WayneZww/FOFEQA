@@ -120,6 +120,7 @@ class FOFENet_Biatt_ASPP(FOFENet_Biatt):
                 fofe_max_length=3, training=True):
         super(FOFENet_Biatt_ASPP, self).__init__(block, emb_dims, 
                     channels, fofe_alpha, fofe_max_length, training)
+        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
         self.aspp = ASPP(channels*2, [1,4,8,12])
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
@@ -127,7 +128,8 @@ class FOFENet_Biatt_ASPP(FOFENet_Biatt):
         d_att, q_att = self.mid_attention(d_l_code, q_l_code)
         model_code = self.h_encode(q_att, d_att)
         aspp_code = self.aspp(model_code)
-        s_score, e_score = self.out_encode(aspp_code)
+        #s_score, e_score = self.out_encode(aspp_code)
+        s_score, e_score = self.out_encode(torch.cat([model_code,aspp_code],dim=1))
         s_score, e_score = self.output(s_score, e_score, doc_mask)
         
         return s_score, e_score
