@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from .modules import bn_conv, depthwise_conv_bn
+from .modules import bn_conv, depthwise_conv_bn, SelfAttention
 
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):

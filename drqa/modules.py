@@ -173,8 +173,10 @@ class SelfAttention(nn.Module):
         self.Wv.weight.data = nn.init.kaiming_normal_(self.Wv.weight.data)
         self.Wq.weight.data = nn.init.kaiming_normal_(self.Wq.weight.data)
         self.Wk.weight.data = nn.init.kaiming_normal_(self.Wk.weight.data)
-        nn.init.constant_(self.W[1].weight, 0)
-        nn.init.constant_(self.W[1].bias, 0)
+        #self.W[0].weight.data = nn.init.kaiming_normal_(self.W[0].weight.data)
+        #nn.init.constant_(self.W[1].weight, 0)
+        nn.init.constant_(self.W[0].weight, 0)
+        nn.init.constant_(self.W[0].bias, 0)
 
     def forward(self, x):
         v_x = self.Wv(x).transpose(-1, -2)
