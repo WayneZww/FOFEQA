@@ -42,11 +42,11 @@ class ASPP(nn.Module):
         for v in rates:
             layers.append(nn.Sequential(
                 bn_conv(planes, planes, 3, 1, v, v, groups=1, bias=False),
-                nn.LeakyReLU(0.1, inplace=True)))
+                nn.ReLU(inplace=True)))
         self.dilated_conv = nn.ModuleList(layers)
         self.aggregate = nn.Sequential(
                 bn_conv(planes*len(rates), planes, 1, 1, 0, 1, groups=1, bias=False),
-                nn.LeakyReLU(0.1, inplace=True))
+                nn.ReLU(inplace=True))
         
     def forward(self, x):
         out = []

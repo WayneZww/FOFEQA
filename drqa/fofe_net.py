@@ -171,13 +171,13 @@ class FOFE_NN(nn.Module):
         self.fnn = nn.Sequential(
             nn.Conv2d(emb_dims*2, emb_dims*4, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*2),
-            nn.LeakyReLU(0.1, inplace=True)
+            nn.ReLU(inplace=True)
         )
         self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
         self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
@@ -244,13 +244,13 @@ class FOFE_NN_att(nn.Module):
         self.fnn = nn.Sequential(
             nn.Conv2d(emb_dims*2, emb_dims*4, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
+            nn.ReLU(inplace=True),
             nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
             nn.BatchNorm2d(emb_dims*2),
-            nn.LeakyReLU(0.1, inplace=True)
+            nn.ReLU(inplace=True)
         )
         self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
         self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)

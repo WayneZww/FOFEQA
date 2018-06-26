@@ -18,7 +18,7 @@ class fofe_conv1d(nn.Module):
         self.dilated_conv = nn.Sequential(
             nn.Conv1d(self.channels,self.channels,3,1,padding=length,
                         dilation=dilation, groups=1, bias=False),
-            nn.LeakyReLU(0.1, inplace=True)           
+            nn.ReLU(inplace=True)           
         )
 
     def _init_filter(self, channels, alpha, length, inverse):
@@ -136,12 +136,12 @@ class res_conv_block(res_block):
                                  dilation, groups=1, bias=False))
 
         for i in range(1, convs):
-            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
+            self.conv.append(nn.ReLU(inplace=True))
             self.conv.append(bn_conv(planes, planes, 3, 1, dilation, 
                                      dilation, groups=1, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
+        self.relu = nn.ReLU(inplace=True) 
         self.downsample = downsample
         self.apply(self.weights_init)
 
@@ -180,12 +180,12 @@ class fofe_depthwise_res_block(res_block):
                                  dilation, bias=False))
 
         for i in range(1, convs):
-            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
+            self.conv.append(nn.ReLU(inplace=True))
             self.conv.append(depthwise_conv_bn(planes, planes, 3, 1, dilation, 
                                      dilation, bias=False))
 
         self.conv = nn.Sequential(*self.conv)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
+        self.relu = nn.ReLU(inplace=True) 
         self.downsample = downsample
         self.apply(self.weights_init)
         self.fofe_filter = fofe_bi_res(inplanes, fofe_alpha, fofe_length)
