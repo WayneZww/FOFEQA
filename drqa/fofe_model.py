@@ -90,6 +90,7 @@ class DocReaderModel(object):
         # Compute loss and accuracies
         loss = F.nll_loss(score_s, target_s) + F.nll_loss(score_e, target_e)
         if self.opt['regloss_ratio'] > 0 and loss.item() > 4:
+            print("regloss_used")
             reg_loss = self.reg_crit(score_s, target_s, self.opt['regloss_sigma']) \
                         + self.reg_crit(score_e, target_e, self.opt['regloss_sigma'])
             loss += self.opt['regloss_ratio']*reg_loss

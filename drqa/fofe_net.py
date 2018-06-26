@@ -27,7 +27,7 @@ class FOFENet(nn.Module):
     def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, training=True):
         super(FOFENet, self).__init__()
         self.dq_l_encoder = self._make_layer(block, emb_dims, channels, 4, 3, fofe_alpha, fofe_max_length)
-        self.dq_h_encoder = self._make_layer(block, channels, channels, 4, 3, fofe_alpha, fofe_max_length, dilation=2)
+        self.dq_h_encoder = self._make_layer(block, channels, channels, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
 
         self.out_attention = Attention(channels)
         self.model_encoder = self._make_layer(block, channels*4, channels*2, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
