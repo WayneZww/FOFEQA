@@ -38,16 +38,21 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(
+            dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
             log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
         em, f1 = score(predictions, dev_y)
         log.info("[dev EM: {} F1: {}]".format(em, f1))
-        if math.fabs(em - checkpoint['em']) > 1e-3 or math.fabs(f1 - checkpoint['f1']) > 1e-3:
-            log.info('Inconsistent: recorded EM: {} F1: {}'.format(checkpoint['em'], checkpoint['f1']))
-            log.error('Error loading model: current code is inconsistent with code used to train the previous model.')
+        if math.fabs(em - checkpoint['em']) > 1e-3 or math.fabs(
+                f1 - checkpoint['f1']) > 1e-3:
+            log.info('Inconsistent: recorded EM: {} F1: {}'.format(
+                checkpoint['em'], checkpoint['f1']))
+            log.error(
+                'Error loading model: current code is inconsistent with code used to train the previous model.'
+            )
             exit(1)
         best_val_score = checkpoint['best_eval']
     else:
@@ -63,12 +68,16 @@ def main():
         for i, batch in enumerate(batches):
             model.update(batch)
             if i % args.log_per_updates == 0:
-                log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                    epoch, model.updates, model.train_loss.value,
-                    str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+                log.info(
+                    '> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.
+                    format(
+                        epoch, model.updates, model.train_loss.value,
+                        str((datetime.now() - start) / (i + 1) *
+                            (len(batches) - i - 1)).split('.')[0]))
         log.debug('\n')
         # eval
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(
+            dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -77,69 +86,124 @@ def main():
         log.warning("dev EM: {} F1: {}".format(em, f1))
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
-            model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
+            model_file = os.path.join(args.model_dir,
+                                      'checkpoint_epoch_{}.pt'.format(epoch))
             model.save(model_file, epoch, [em, f1, best_val_score])
             if f1 > best_val_score:
                 best_val_score = f1
-                copyfile(
-                    model_file,
-                    os.path.join(args.model_dir, 'best_model.pt'))
+                copyfile(model_file,
+                         os.path.join(args.model_dir, 'best_model.pt'))
                 log.info('[new best model saved.]')
 
 
 def setup():
     parser = argparse.ArgumentParser(
-        description='Train a Document Reader model.'
-    )
+        description='Train a Document Reader model.')
     # system
-    parser.add_argument('--log_per_updates', type=int, default=3,
-                        help='log model loss per x updates (mini-batches).')
-    parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
-                        help='path to preprocessed data file.')
-    parser.add_argument('--model_dir', default='models',
-                        help='path to store saved models.')
-    parser.add_argument('--save_last_only', action='store_true',
-                        help='only save the final models.')
-    parser.add_argument('--seed', type=int, default=1013,
-                        help='random seed for data shuffling, dropout, etc.')
-    parser.add_argument("--cuda", type=str2bool, nargs='?',
-                        const=True, default=torch.cuda.is_available(),
-                        help='whether to use GPU acceleration.')
+    parser.add_argument(
+        '--log_per_updates',
+        type=int,
+        default=3,
+        help='log model loss per x updates (mini-batches).')
+    parser.add_argument(
+        '--data_file',
+        default='./data/SQuAD/data.msgpack',
+        help='path to preprocessed data file.')
+    parser.add_argument(
+        '--model_dir', default='models', help='path to store saved models.')
+    parser.add_argument(
+        '--save_last_only',
+        action='store_true',
+        help='only save the final models.')
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=1013,
+        help='random seed for data shuffling, dropout, etc.')
+    parser.add_argument(
+        "--cuda",
+        type=str2bool,
+        nargs='?',
+        const=True,
+        default=torch.cuda.is_available(),
+        help='whether to use GPU acceleration.')
     # training
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
-    parser.add_argument('-rs', '--resume', default='best_model.pt',
-                        help='previous model file name (in `model_dir`). '
-                             'e.g. "checkpoint_epoch_11.pt"')
-    parser.add_argument('-ro', '--resume_options', action='store_true',
-                        help='use previous model options, ignore the cli and defaults.')
-    parser.add_argument('-rlr', '--reduce_lr', type=float, default=0.,
-                        help='reduce initial (resumed) learning rate by this factor.')
-    parser.add_argument('-op', '--optimizer', default='adamax',
-                        help='supported optimizer: adamax, sgd')
+    parser.add_argument(
+        '-rs',
+        '--resume',
+        default='best_model.pt',
+        help='previous model file name (in `model_dir`). '
+        'e.g. "checkpoint_epoch_11.pt"')
+    parser.add_argument(
+        '-ro',
+        '--resume_options',
+        action='store_true',
+        help='use previous model options, ignore the cli and defaults.')
+    parser.add_argument(
+        '-rlr',
+        '--reduce_lr',
+        type=float,
+        default=0.,
+        help='reduce initial (resumed) learning rate by this factor.')
+    parser.add_argument(
+        '-op',
+        '--optimizer',
+        default='adamax',
+        help='supported optimizer: adamax, sgd')
     parser.add_argument('-gc', '--grad_clipping', type=float, default=10)
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
-    parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
-                        help='only applied to SGD.')
-    parser.add_argument('-mm', '--momentum', type=float, default=0,
-                        help='only applied to SGD.')
-    parser.add_argument('-tp', '--tune_partial', type=int, default=1000,
-                        help='finetune top-x embeddings.')
-    parser.add_argument('--fix_embeddings', action='store_true',
-                        help='if true, `tune_partial` will be ignored.')
-    parser.add_argument('--rnn_padding', action='store_true',
-                        help='perform rnn padding (much slower but more accurate).')
+    parser.add_argument(
+        '-lr',
+        '--learning_rate',
+        type=float,
+        default=0.1,
+        help='only applied to SGD.')
+    parser.add_argument(
+        '-mm',
+        '--momentum',
+        type=float,
+        default=0,
+        help='only applied to SGD.')
+    parser.add_argument(
+        '-tp',
+        '--tune_partial',
+        type=int,
+        default=1000,
+        help='finetune top-x embeddings.')
+    parser.add_argument(
+        '--fix_embeddings',
+        action='store_true',
+        help='if true, `tune_partial` will be ignored.')
+    parser.add_argument(
+        '--rnn_padding',
+        action='store_true',
+        help='perform rnn padding (much slower but more accurate).')
     # model
-    parser.add_argument('--encoder', default='fofe_biatt_aspp',
-                        help='encoder framework to use')
-    parser.add_argument('--block', default='fofe_res_att_block',
-                        help='encoder framework to use')
-    parser.add_argument('--planes', type=int, default=256,
-                        help='number of planes in each block')
-    parser.add_argument('--regloss_ratio', type=float, default=0,
-                        help='ratio of gaussian distribution regression loss(0 if not use).')  
-    parser.add_argument('--regloss_sigma', type=float, default=5,
-                        help='sigma of gaussian distribution regression loss(0 if not use).')               
+    parser.add_argument(
+        '--encoder',
+        default='fofe_biatt_aspp',
+        help='encoder framework to use')
+    parser.add_argument(
+        '--block',
+        default='fofe_res_att_block',
+        help='encoder framework to use')
+    parser.add_argument(
+        '--planes',
+        type=int,
+        default=256,
+        help='number of planes in each block')
+    parser.add_argument(
+        '--regloss_ratio',
+        type=float,
+        default=0,
+        help='ratio of gaussian distribution regression loss(0 if not use).')
+    parser.add_argument(
+        '--regloss_sigma',
+        type=float,
+        default=5,
+        help='sigma of gaussian distribution regression loss(0 if not use).')
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', type=float, default=0.8)
@@ -152,7 +216,8 @@ def setup():
     os.makedirs(model_dir, exist_ok=True)
     args.model_dir = os.path.abspath(model_dir)
 
-    if args.resume == 'best_model.pt' and not os.path.exists(os.path.join(args.model_dir, args.resume)):
+    if args.resume == 'best_model.pt' and not os.path.exists(
+            os.path.join(args.model_dir, args.resume)):
         # means we're starting fresh
         args.resume = ''
 
@@ -181,7 +246,8 @@ def setup():
     fh.setLevel(logging.INFO)
     ch = ProgressHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(fmt='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S')
+    formatter = logging.Formatter(
+        fmt='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S')
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     log.addHandler(fh)
@@ -233,7 +299,9 @@ class BatchGen:
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
         # chunk into batches
-        data = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        data = [
+            data[i:i + batch_size] for i in range(0, len(data), batch_size)
+        ]
 
         # shuffle
         if not evaluation:
@@ -260,17 +328,20 @@ class BatchGen:
 
             feature_len = len(batch[2][0][0])
 
-            context_feature = torch.Tensor(batch_size, context_len, feature_len).fill_(0)
+            context_feature = torch.Tensor(batch_size, context_len,
+                                           feature_len).fill_(0)
             for i, doc in enumerate(batch[2]):
                 for j, feature in enumerate(doc):
                     context_feature[i, j, :] = torch.Tensor(feature)
 
-            context_tag = torch.Tensor(batch_size, context_len, self.pos_size).fill_(0)
+            context_tag = torch.Tensor(batch_size, context_len,
+                                       self.pos_size).fill_(0)
             for i, doc in enumerate(batch[3]):
                 for j, tag in enumerate(doc):
                     context_tag[i, j, tag] = 1
 
-            context_ent = torch.Tensor(batch_size, context_len, self.ner_size).fill_(0)
+            context_ent = torch.Tensor(batch_size, context_len,
+                                       self.ner_size).fill_(0)
             for i, doc in enumerate(batch[4]):
                 for j, ent in enumerate(doc):
                     context_ent[i, j, ent] = 1
@@ -296,11 +367,12 @@ class BatchGen:
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
             if self.eval:
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, text, span)
+                yield (context_id, context_feature, context_tag, context_ent,
+                       context_mask, question_id, question_mask, text, span)
             else:
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, y_s, y_e, text, span)
+                yield (context_id, context_feature, context_tag, context_ent,
+                       context_mask, question_id, question_mask, y_s, y_e,
+                       text, span)
 
 
 def _normalize_answer(s):
@@ -362,4 +434,3 @@ def score(pred, truth):
 
 if __name__ == '__main__':
     main()
-

@@ -4,29 +4,60 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
+
 class bn_conv(nn.Module):
-    def __init__(self,inplanes, planes, kernel, stride, 
-                        padding=0, dilation=1, groups=1, bias=False):
+    def __init__(self,
+                 inplanes,
+                 planes,
+                 kernel,
+                 stride,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 bias=False):
         super(bn_conv, self).__init__()
-        self.conv = nn.Conv1d(inplanes, planes, kernel, stride, padding,
-                                dilation, groups, bias=False)
+        self.conv = nn.Conv1d(
+            inplanes,
+            planes,
+            kernel,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias=False)
         self.bn = nn.BatchNorm1d(planes)
+
     def forward(self, x):
         out = self.conv(x)
         out = self.bn(out)
         return out
 
+
 class depthwise_conv_bn(nn.Module):
-    def __init__(self,in_channels, out_channels, kernel_size=1, 
-                    stride=1, padding=0, dilation=1, bias=False):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size=1,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 bias=False):
         super(depthwise_conv_bn, self).__init__()
 
-        self.conv = nn.Conv1d(in_channels, in_channels, kernel_size, stride,padding,
-                            dilation, groups=in_channels, bias=bias)
-        self.pointwise = nn.Conv1d(in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias)
+        self.conv = nn.Conv1d(
+            in_channels,
+            in_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups=in_channels,
+            bias=bias)
+        self.pointwise = nn.Conv1d(
+            in_channels, out_channels, 1, 1, 0, 1, 1, bias=bias)
         self.bn = nn.BatchNorm1d(out_channels)
-    
-    def forward(self,x):
+
+    def forward(self, x):
         x = self.conv(x)
         x = self.pointwise(x)
         x = self.bn(x)
@@ -40,23 +71,25 @@ class ASPP(nn.Module):
         self.planes = planes
         self.rates = rates
         for v in rates:
-            layers.append(nn.Sequential(
-                bn_conv(planes, planes, 3, 1, v, v, groups=1, bias=False),
-                nn.ReLU(inplace=True)))
+            layers.append(
+                nn.Sequential(
+                    bn_conv(planes, planes, 3, 1, v, v, groups=1, bias=False),
+                    nn.ReLU(inplace=True)))
         self.dilated_conv = nn.ModuleList(layers)
         self.aggregate = nn.Sequential(
-                bn_conv(planes*len(rates), planes, 1, 1, 0, 1, groups=1, bias=False),
-                nn.ReLU(inplace=True))
-        
+            bn_conv(
+                planes * len(rates), planes, 1, 1, 0, 1, groups=1, bias=False),
+            nn.ReLU(inplace=True))
+
     def forward(self, x):
         out = []
-        for layer in self.dilated_conv :
+        for layer in self.dilated_conv:
             out.append(layer(x))
-        
+
         out = torch.cat(out, dim=1)
         out = self.aggregate(out)
         return out
-    
+
     def extra_repr(self):
         return 'planes={planes}, rates={rates}'.format(**self.__dict__)
 
@@ -64,7 +97,7 @@ class ASPP(nn.Module):
 class Simility(nn.Module):
     def __init__(self, planes):
         super(Simility, self).__init__()
-        self.W = nn.Conv2d(planes*3, 1, 1, 1, bias=False)
+        self.W = nn.Conv2d(planes * 3, 1, 1, 1, bias=False)
         self.W.weight.data = nn.init.kaiming_normal_(self.W.weight.data)
 
     def forward(self, doc, query):
@@ -95,13 +128,16 @@ class Attention(nn.Module):
     def __init__(self, planes):
         super(Attention, self).__init__()
         self.simility = Simility(planes)
-    
+
     def forward(self, doc, query):
         simility = self.simility(doc, query)
-        s1_t = F.softmax(simility,dim=-2).transpose(-1,-2)
-        c2q_att = torch.bmm(s1_t, query.transpose(-1,-2)).transpose(-1,-2) #batchsize x d x n
+        s1_t = F.softmax(simility, dim=-2).transpose(-1, -2)
+        c2q_att = torch.bmm(s1_t, query.transpose(-1, -2)).transpose(
+            -1, -2)  #batchsize x d x n
         s2 = F.softmax(simility, dim=-1)
-        q2c_att = torch.bmm(s1_t, torch.bmm(s2, doc.transpose(-1,-2))).transpose(-1,-2) #batchsize x d x n
+        q2c_att = torch.bmm(s1_t, torch.bmm(s2,
+                                            doc.transpose(-1, -2))).transpose(
+                                                -1, -2)  #batchsize x d x n
 
         output = []
         output.append(doc)
@@ -117,17 +153,22 @@ class BiAttention(nn.Module):
     def __init__(self, planes):
         super(BiAttention, self).__init__()
         self.simility = Simility(planes)
-    
+
     def forward(self, doc, query):
         simility = self.simility(doc, query)
-        s1_t = F.softmax(simility,dim=-2).transpose(-1,-2)
+        s1_t = F.softmax(simility, dim=-2).transpose(-1, -2)
         s2 = F.softmax(simility, dim=-1)
 
-        d_d2q_att = torch.bmm(s1_t, query.transpose(-1,-2)).transpose(-1,-2) #batchsize x d x n
-        d_q2d_att = torch.bmm(s1_t, torch.bmm(s2, doc.transpose(-1,-2))).transpose(-1,-2) #batchsize x d x n
+        d_d2q_att = torch.bmm(s1_t, query.transpose(-1, -2)).transpose(
+            -1, -2)  #batchsize x d x n
+        d_q2d_att = torch.bmm(s1_t,
+                              torch.bmm(s2, doc.transpose(-1, -2))).transpose(
+                                  -1, -2)  #batchsize x d x n
 
-        q_q2d_att = torch.bmm(s2, doc.transpose(-1,-2)).transpose(-1,-2) #batchsize x d x m
-        q_d2q_att = torch.bmm(s2, torch.bmm(s1_t, query.transpose(-1,-2))).transpose(-1,-2) #batchsize x d x m
+        q_q2d_att = torch.bmm(s2, doc.transpose(-1, -2)).transpose(
+            -1, -2)  #batchsize x d x m
+        q_d2q_att = torch.bmm(s2, torch.bmm(s1_t, query.transpose(
+            -1, -2))).transpose(-1, -2)  #batchsize x d x m
 
         d_output = []
         d_output.append(doc)
@@ -154,22 +195,36 @@ class SelfAttention(nn.Module):
         self.inter_channels = inter_channels
 
         if self.inter_channels is None:
-            self.inter_channels = in_channels 
+            self.inter_channels = in_channels
             if self.inter_channels == 0:
                 self.inter_channels = 1
 
-        self.Wv = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
-                         kernel_size=1, stride=1, padding=0)
-        self.Wq = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
-                            kernel_size=1, stride=1, padding=0)
-        self.Wk = nn.Conv1d(in_channels=self.in_channels, out_channels=self.inter_channels,
-                            kernel_size=1, stride=1, padding=0)
+        self.Wv = nn.Conv1d(
+            in_channels=self.in_channels,
+            out_channels=self.inter_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0)
+        self.Wq = nn.Conv1d(
+            in_channels=self.in_channels,
+            out_channels=self.inter_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0)
+        self.Wk = nn.Conv1d(
+            in_channels=self.in_channels,
+            out_channels=self.inter_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0)
 
         self.W = nn.Sequential(
-            nn.Conv1d(in_channels=self.inter_channels, out_channels=self.in_channels,
-                    kernel_size=1, stride=1, padding=0),
-            nn.BatchNorm1d(self.in_channels)
-        )
+            nn.Conv1d(
+                in_channels=self.inter_channels,
+                out_channels=self.in_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0), nn.BatchNorm1d(self.in_channels))
         self.Wv.weight.data = nn.init.kaiming_normal_(self.Wv.weight.data)
         self.Wq.weight.data = nn.init.kaiming_normal_(self.Wq.weight.data)
         self.Wk.weight.data = nn.init.kaiming_normal_(self.Wk.weight.data)
@@ -185,7 +240,7 @@ class SelfAttention(nn.Module):
         s = torch.bmm(q_x, k_x)
         similirity = F.softmax(s, dim=-2)
 
-        y = torch.matmul(similirity, v_x).transpose(-1,-2).contiguous()
+        y = torch.matmul(similirity, v_x).transpose(-1, -2).contiguous()
         W_y = self.W(y)
         output = W_y + x
 
@@ -197,16 +252,18 @@ class reg_loss(nn.Module):
         super(reg_loss, self).__init__()
         self.mse_loss = nn.MSELoss()
 
-    def forward(self, log_soft_x, target,  sig):
+    def forward(self, log_soft_x, target, sig):
         shape = log_soft_x.shape
-        sigma = target.new_full((1,), sig, dtype=torch.float)
+        sigma = target.new_full((1, ), sig, dtype=torch.float)
         distribution = target.new_zeros(shape, dtype=torch.float)
-        distribution.copy_(torch.range(0,shape[1]-1))
-        exponent = torch.sub(distribution, target.unsqueeze(-1).float()).pow(2).mul(-1).div(2*sigma.pow(2))
+        distribution.copy_(torch.range(0, shape[1] - 1))
+        exponent = torch.sub(distribution,
+                             target.unsqueeze(-1).float()).pow(2).mul(-1).div(
+                                 2 * sigma.pow(2))
         gaussian = torch.exp(exponent)
-        
+
         if sig < 1:
-            eff = sigma*torch.sqrt(torch.Tensor([2*math.pi]))
-            gaussian = gaussian/eff
+            eff = sigma * torch.sqrt(torch.Tensor([2 * math.pi]))
+            gaussian = gaussian / eff
         loss = self.mse_loss(torch.exp(log_soft_x), gaussian)
         return loss
