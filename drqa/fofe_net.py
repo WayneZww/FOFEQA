@@ -100,8 +100,8 @@ class FOFENet(nn.Module):
 
 
 class FOFENet_Biatt(FOFENet):
-    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
-                    att_bidirection=False, att_q2c=True, training=True):
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, 
+                fofe_max_length=3, training=True):
         super(FOFENet_Biatt, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, training=True)
         self.mid_attention = BiAttention(channels)
         self.dq_h_encoder = self._make_layer(block, channels*4, channels, 2, 3, fofe_alpha, fofe_max_length, dilation=2)
@@ -116,10 +116,10 @@ class FOFENet_Biatt(FOFENet):
         return s_score, e_score
     
 class FOFENet_Biatt_ASPP(FOFENet_Biatt):
-    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
-                    att_bidirection=False, att_q2c=True, training=True):
-        super(FOFENet_Biatt_ASPP, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, 
-                    att_bidirection, att_q2c, training)
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, 
+                fofe_max_length=3, training=True):
+        super(FOFENet_Biatt_ASPP, self).__init__(block, emb_dims, 
+                    channels, fofe_alpha, fofe_max_length, training)
         self.aspp = ASPP(channels*2, [1,4,8,12])
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):
@@ -133,10 +133,10 @@ class FOFENet_Biatt_ASPP(FOFENet_Biatt):
         return s_score, e_score
 
 class FOFENet_Biatt_Selfatt_ASPP(FOFENet_Biatt_ASPP):
-    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
-                    att_bidirection=False, att_q2c=True, training=True):
-        super(FOFENet_Biatt_Selfatt_ASPP, self).__init__(block, emb_dims, channels, fofe_alpha, fofe_max_length, 
-                    att_bidirection, att_q2c, training)
+    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, 
+                fofe_max_length=3,training=True):
+        super(FOFENet_Biatt_Selfatt_ASPP, self).__init__(block, emb_dims, 
+                        channels, fofe_alpha, fofe_max_length, training)
         self.self_attention = SelfAttention(channels*2)
 
     def forward(self, query_emb, query_mask, doc_emb, doc_mask):

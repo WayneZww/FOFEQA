@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from .modules import bn_conv
+from .modules import bn_conv, depthwise_conv_bn
 
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):
@@ -105,24 +105,7 @@ class fofe_bi_res(nn.Module):
         return out
 
 
-class res_conv_block(nn.Module):
-    def __init__(self, inplanes, planes, convs=3, dilation=1,
-                     downsample=None):
-        super(res_conv_block, self).__init__()
-        self.conv = []
-        self.conv.append(bn_conv(inplanes, planes, 3, 1, dilation, 
-                                 dilation, groups=1, bias=False))
-
-        for i in range(1, convs):
-            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
-            self.conv.append(bn_conv(planes, planes, 3, 1, dilation, 
-                                     dilation, groups=1, bias=False))
-
-        self.conv = nn.Sequential(*self.conv)
-        self.relu = nn.LeakyReLU(0.1, inplace=True) 
-        self.downsample = downsample
-        self.apply(self.weights_init)
-    
+class res_block(nn.Module):
     def weights_init(self, m):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
@@ -144,6 +127,24 @@ class res_conv_block(nn.Module):
         x = self.res_conv(x)
         return x
 
+class res_conv_block(res_block):
+    def __init__(self, inplanes, planes, convs=3, dilation=1,
+                     downsample=None):
+        super(res_conv_block, self).__init__()
+        self.conv = []
+        self.conv.append(bn_conv(inplanes, planes, 3, 1, dilation, 
+                                 dilation, groups=1, bias=False))
+
+        for i in range(1, convs):
+            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
+            self.conv.append(bn_conv(planes, planes, 3, 1, dilation, 
+                                     dilation, groups=1, bias=False))
+
+        self.conv = nn.Sequential(*self.conv)
+        self.relu = nn.LeakyReLU(0.1, inplace=True) 
+        self.downsample = downsample
+        self.apply(self.weights_init)
+
 
 class fofe_res_conv_block(res_conv_block):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
@@ -162,6 +163,31 @@ class fofe_bi_res_block(res_conv_block):
                         dilation=1, downsample=None):
         super(fofe_bi_res_block, self).__init__(inplanes, planes, convs,  
                         dilation, downsample)
+        self.fofe_filter = fofe_bi_res(inplanes, fofe_alpha, fofe_length)
+
+    def forward(self, x): 
+        x = self.fofe_filter(x)
+        x = self.res_conv(x)
+        return x
+
+
+class fofe_depthwise_res_block(res_block):
+    def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, 
+                        dilation=1, downsample=None):
+        super(fofe_depthwise_res_block, self).__init__()
+        self.conv = []
+        self.conv.append(depthwise_conv_bn(inplanes, planes, 3, 1, dilation, 
+                                 dilation, bias=False))
+
+        for i in range(1, convs):
+            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
+            self.conv.append(depthwise_conv_bn(planes, planes, 3, 1, dilation, 
+                                     dilation, bias=False))
+
+        self.conv = nn.Sequential(*self.conv)
+        self.relu = nn.LeakyReLU(0.1, inplace=True) 
+        self.downsample = downsample
+        self.apply(self.weights_init)
         self.fofe_filter = fofe_bi_res(inplanes, fofe_alpha, fofe_length)
 
     def forward(self, x): 

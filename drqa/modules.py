@@ -16,10 +16,10 @@ class bn_conv(nn.Module):
         out = self.bn(out)
         return out
 
-class separable_conv_bn(nn.Module):
+class depthwise_conv_bn(nn.Module):
     def __init__(self,in_channels, out_channels, kernel_size=1, 
                     stride=1, padding=0, dilation=1, bias=False):
-        super(separable_conv_bn,self).__init__()
+        super(depthwise_conv_bn, self).__init__()
 
         self.conv = nn.Conv1d(in_channels, in_channels, kernel_size, stride,padding,
                             dilation, groups=in_channels, bias=bias)
