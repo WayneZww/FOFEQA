@@ -232,6 +232,8 @@ class SelfAttention(nn.Module):
         #nn.init.constant_(self.W[1].weight, 0)
         nn.init.constant_(self.W[0].weight, 0)
         nn.init.constant_(self.W[0].bias, 0)
+        nn.init.constant_(self.W[1].weight, 0)
+        nn.init.constant_(self.W[1].bias, 0)
 
     def forward(self, x):
         v_x = self.Wv(x).transpose(-1, -2)

@@ -237,7 +237,8 @@ class FOFENet_Biatt_Selfatt_ASPP(FOFENet_Biatt_ASPP):
         model_code = self.h_encode(q_att, d_att)
         att_code = self.self_attention(model_code)
         aspp_code = self.aspp(att_code)
-        s_score, e_score = self.out_encode(aspp_code)
+        s_score, e_score = self.out_encode(
+            torch.cat([model_code, aspp_code], dim=1))
         s_score, e_score = self.output(s_score, e_score, doc_mask)
 
         return s_score, e_score
