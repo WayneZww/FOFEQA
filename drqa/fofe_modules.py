@@ -115,8 +115,7 @@ class fofe_res_filter(fofe_filter):
 
 class fofe_linear_res(fofe_filter):
     def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
-        super(fofe_linear_res, self).__init__(inplanes, alpha, length,
-                                                     inverse)
+        super(fofe_linear_res, self).__init__(inplanes, alpha, length, inverse)
         self.W = nn.Conv1d(inplanes, inplanes, 1, 1, bias=False)
         nn.init.constant_(self.W.weight, 0)
         #nn.init.constant_(self.W.bias, 0)
@@ -227,8 +226,8 @@ class fofe_res_conv_block(res_conv_block):
         x = self.fofe_filter(x)
         x = self.res_conv(x)
         return x
-    
-    
+
+
 class fofe_linear_res_block(res_conv_block):
     def __init__(self,
                  inplanes,
@@ -240,7 +239,7 @@ class fofe_linear_res_block(res_conv_block):
                  downsample=None,
                  fofe_inverse=False):
         super(fofe_linear_res_block, self).__init__(inplanes, planes, convs,
-                                                  dilation, downsample)
+                                                    dilation, downsample)
         self.fofe_filter = fofe_linear_res(inplanes, fofe_alpha, fofe_length,
                                            fofe_inverse)
 
@@ -322,8 +321,8 @@ class fofe_res_att_block(fofe_res_conv_block):
         x = self.res_conv(x)
         x = self.att(x)
         return x
-    
-    
+
+
 class fofe_linear_res_att_block(fofe_linear_res_block):
     def __init__(self,
                  inplanes,
@@ -334,9 +333,9 @@ class fofe_linear_res_att_block(fofe_linear_res_block):
                  dilation=1,
                  downsample=None,
                  fofe_inverse=False):
-        super(fofe_linear_res_att_block,
-              self).__init__(inplanes, planes, convs, fofe_alpha, fofe_length,
-                             dilation, downsample, fofe_inverse)
+        super(fofe_linear_res_att_block, self).__init__(
+            inplanes, planes, convs, fofe_alpha, fofe_length, dilation,
+            downsample, fofe_inverse)
         self.att = SelfAttention(planes)
 
     def forward(self, x):
@@ -378,3 +377,78 @@ class fofe(nn.Module):
             torch.pow(self.alpha, torch.linspace(length - 1, 0, length)))
         fofe_code = torch.bmm(matrix, x)
         return fofe_code
+
+
+class fofe_tri(nn.Module):
+    def __init__(self, channels, alpha, inverse=False):
+        super(fofe_tri, self).__init__()
+        self.alpha = alpha
+        self.inverse = inverse
+
+    def forward(self, x):
+        length = x.size(-2)
+        matrix = x.new_empty(x.size(0), length, length)
+        if not self.inverse:
+            for i in range(length):
+                matrix[0, length-1-i, ].copy_(torch.pow(self.alpha,
+                              torch.linspace(length - 1 - i, 0 - i, length)))
+            matrix[:,].copy_(torch.tril(matrix[0], 0))
+        fofe_code = matrix.bmm(x)
+        return fofe_code
+
+
+class fofe_tri_res(nn.Module):
+    def __init__(self, channels, alpha, inverse=False):
+        super(fofe_tri_res, self).__init__()
+        self.fofe_tri = fofe_tri(channels, alpha, inverse)
+
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0:
+            return x
+        residual = x
+        out = self.fofe_tri(x)
+        out += residual
+        return out
+
+
+class fofe_tri_linear_res(nn.Module):
+    def __init__(self, channels, alpha, inverse=False):
+        super(fofe_tri_linear_res, self).__init__()
+        self.alpha = alpha
+        self.fofe_tri = fofe_tri(channels, alpha, inverse)
+        self.W = nn.Conv1d(channels, channels, 1, 1, bias=False)
+        nn.init.constant_(self.W.weight, 0)
+        # nn.init.constant_(self.W.bias, 0)
+
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0:
+            return x
+        residual = x
+        out = self.fofe_tri(x.transpose(-1,-2)).transpose(-1,-2)
+        out = self.W(out)
+        out += residual
+        return out
+
+
+class fofe_tri_linear_res_block(res_conv_block):
+    def __init__(self,
+                 inplanes,
+                 planes,
+                 convs=3,
+                 fofe_alpha=0.9,
+                 fofe_length=3,
+                 dilation=1,
+                 downsample=None,
+                 fofe_inverse=False):
+        super(fofe_tri_linear_res_block, self).__init__(inplanes,
+                                                        planes,
+                                                        convs,
+                                                        dilation,
+                                                        downsample)
+        self.fofe_filter = fofe_tri_linear_res(inplanes,
+                                               fofe_alpha, fofe_inverse)
+
+    def forward(self, x):
+        x = self.fofe_filter(x)
+        x = self.res_conv(x)
+        return x

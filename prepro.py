@@ -110,15 +110,15 @@ def setup():
     parser = argparse.ArgumentParser(
         description='Preprocessing data files, about 10 minitues to run.'
     )
-    parser.add_argument('--trn_file', default='./data/SQuAD/train-v2.0.json',
+    parser.add_argument('--trn_file', default='./data/SQuAD/train-v1.1.json',
                         help='path to train file.')
-    parser.add_argument('--dev_file', default='./data/SQuAD/dev-v2.0.json',
+    parser.add_argument('--dev_file', default='./data/SQuAD/dev-v1.1.json',
                         help='path to dev file.')
-    parser.add_argument('--target_meta', default='./data/SQuAD/meta-2.0.msgpack',
+    parser.add_argument('--target_meta', default='./data/SQuAD/meta-1.1.msgpack',
                         help='path to dev file.')
-    parser.add_argument('--target_data', default='./data/SQuAD/data-2.0.msgpack',
+    parser.add_argument('--target_data', default='./data/SQuAD/data-1.1.msgpack',
                         help='path to dev file.')
-    parser.add_argument('--target_sample', default='./data/SQuAD/sample-2.0.msgpack',
+    parser.add_argument('--target_sample', default='./data/SQuAD/sample-1.1.msgpack',
                         help='path to dev file.')
     parser.add_argument('--wv_file', default='./data/glove/glove.840B.300d.txt',
                         help='path to word vector file.')
@@ -132,7 +132,7 @@ def setup():
                              'Otherwise consider question words first.')
     parser.add_argument('--sample_size', type=int, default=0,
                         help='size of sample data (for debugging).')
-    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count()-8, 16),
+    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count()-1, 16),
                         help='number of threads for preprocessing.')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='batch size for multiprocess tokenizing and tagging.')

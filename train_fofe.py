@@ -107,8 +107,12 @@ def setup():
         help='log model loss per x updates (mini-batches).')
     parser.add_argument(
         '--data_file',
-        default='./data/SQuAD/data.msgpack',
+        default='./data/SQuAD/data-1.1.msgpack',
         help='path to preprocessed data file.')
+    parser.add_argument(
+        '--meta_file',
+        default='./data/SQuAD/meta-1.1.msgpack',
+        help='path to preprocessed meta file.')
     parser.add_argument(
         '--model_dir', default='models', help='path to store saved models.')
     parser.add_argument(
@@ -263,7 +267,7 @@ def lr_decay(optimizer, lr_decay):
 
 
 def load_data(opt):
-    with open('./data/SQuAD/meta.msgpack', 'rb') as f:
+    with open(opt['meta_file'], 'rb') as f:
         meta = msgpack.load(f, encoding='utf8')
     embedding = torch.Tensor(meta['embedding'])
     opt['pretrained_words'] = True
