@@ -392,8 +392,9 @@ class fofe_tri(nn.Module):
             for i in range(length):
                 matrix[0, length - 1 - i, ].copy_(
                     torch.pow(self.alpha,
-                              torch.linspace(length - 1 - i, 0 - i, length)))
+                              torch.linspace(length - 1 - i, 0 + i, length)))
             matrix[:, ].copy_(torch.tril(matrix[0], 0))
+        import pdb; pdb.set_trace()
         fofe_code = matrix.bmm(x)
         return fofe_code
 
