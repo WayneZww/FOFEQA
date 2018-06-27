@@ -380,7 +380,7 @@ class fofe(nn.Module):
 
 
 class fofe_tri(nn.Module):
-    def __init__(self, channels, alpha, inverse=False):
+    def __init__(self, alpha, inverse=False):
         super(fofe_tri, self).__init__()
         self.alpha = alpha
         self.inverse = inverse
@@ -390,17 +390,21 @@ class fofe_tri(nn.Module):
         matrix = x.new_empty(x.size(0), length, length)
         if not self.inverse:
             for i in range(length):
-                matrix[0, length-1-i, ].copy_(torch.pow(self.alpha,
+                matrix[0, length - 1 - i, ].copy_(
+                    torch.pow(self.alpha,
                               torch.linspace(length - 1 - i, 0 - i, length)))
-            matrix[:,].copy_(torch.tril(matrix[0], 0))
+            matrix[:, ].copy_(torch.tril(matrix[0], 0))
         fofe_code = matrix.bmm(x)
         return fofe_code
+
+    def extra_repr(self):
+        return 'alpha={alpha}, inverse={inverse}'.format(**self.__dict__)
 
 
 class fofe_tri_res(nn.Module):
     def __init__(self, channels, alpha, inverse=False):
         super(fofe_tri_res, self).__init__()
-        self.fofe_tri = fofe_tri(channels, alpha, inverse)
+        self.fofe_tri = fofe_tri(alpha, inverse)
 
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0:
@@ -415,7 +419,7 @@ class fofe_tri_linear_res(nn.Module):
     def __init__(self, channels, alpha, inverse=False):
         super(fofe_tri_linear_res, self).__init__()
         self.alpha = alpha
-        self.fofe_tri = fofe_tri(channels, alpha, inverse)
+        self.fofe_tri = fofe_tri(alpha, inverse)
         self.W = nn.Conv1d(channels, channels, 1, 1, bias=False)
         nn.init.constant_(self.W.weight, 0)
         # nn.init.constant_(self.W.bias, 0)
@@ -424,7 +428,7 @@ class fofe_tri_linear_res(nn.Module):
         if self.alpha == 1 or self.alpha == 0:
             return x
         residual = x
-        out = self.fofe_tri(x.transpose(-1,-2)).transpose(-1,-2)
+        out = self.fofe_tri(x.transpose(-1, -2)).transpose(-1, -2)
         out = self.W(out)
         out += residual
         return out
@@ -440,13 +444,10 @@ class fofe_tri_linear_res_block(res_conv_block):
                  dilation=1,
                  downsample=None,
                  fofe_inverse=False):
-        super(fofe_tri_linear_res_block, self).__init__(inplanes,
-                                                        planes,
-                                                        convs,
-                                                        dilation,
-                                                        downsample)
-        self.fofe_filter = fofe_tri_linear_res(inplanes,
-                                               fofe_alpha, fofe_inverse)
+        super(fofe_tri_linear_res_block, self).__init__(
+            inplanes, planes, convs, dilation, downsample)
+        self.fofe_filter = fofe_tri_linear_res(inplanes, fofe_alpha,
+                                               fofe_inverse)
 
     def forward(self, x):
         x = self.fofe_filter(x)
