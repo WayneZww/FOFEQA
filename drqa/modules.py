@@ -161,14 +161,15 @@ class BiAttention(nn.Module):
 
         d_d2q_att = torch.bmm(s1_t, query.transpose(-1, -2)).transpose(
             -1, -2)  #batchsize x d x n
-        d_q2d_att = torch.bmm(s1_t,
-                              torch.bmm(s2, doc.transpose(-1, -2))).transpose(
-                                  -1, -2)  #batchsize x d x n
-
         q_q2d_att = torch.bmm(s2, doc.transpose(-1, -2)).transpose(
             -1, -2)  #batchsize x d x m
-        q_d2q_att = torch.bmm(s2, torch.bmm(s1_t, query.transpose(
-            -1, -2))).transpose(-1, -2)  #batchsize x d x m
+        # d_q2d_att = torch.bmm(s1_t,
+        #                       torch.bmm(s2, doc.transpose(-1, -2))).transpose(
+        #                           -1, -2)  #batchsize x d x n
+        d_q2d_att = torch.bmm(s1_t, q_q2d_att.transpose(-1, -2)).transpose(-1, -2)  #batchsize x d x n
+        q_d2q_att = torch.bmm(s2, d_d2q_att.transpose(-1, -2)).transpose(-1, -2)  #batchsize x d x m
+        #q_d2q_att = torch.bmm(s2, torch.bmm(s1_t, query.transpose(
+        #    -1, -2))).transpose(-1, -2)  #batchsize x d x m
 
         d_output = []
         d_output.append(doc)
