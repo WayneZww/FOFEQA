@@ -322,6 +322,28 @@ class fofe_res_att_block(fofe_res_conv_block):
         x = self.res_conv(x)
         x = self.att(x)
         return x
+    
+    
+class fofe_linear_res_att_block(fofe_linear_res_block):
+    def __init__(self,
+                 inplanes,
+                 planes,
+                 convs=3,
+                 fofe_alpha=0.9,
+                 fofe_length=3,
+                 dilation=1,
+                 downsample=None,
+                 fofe_inverse=False):
+        super(fofe_linear_res_att_block,
+              self).__init__(inplanes, planes, convs, fofe_alpha, fofe_length,
+                             dilation, downsample, fofe_inverse)
+        self.att = SelfAttention(planes)
+
+    def forward(self, x):
+        x = self.fofe_filter(x)
+        x = self.res_conv(x)
+        x = self.att(x)
+        return x
 
 
 class fofe_linear(nn.Module):
