@@ -43,17 +43,17 @@ class fofe_filter(nn.Module):
         self.length = length
         self.channels = inplanes
         self.alpha = alpha
-        self.fofe_filter = Parameter(torch.Tensor(inplanes,1,length))
-        self.fofe_filter.requires_grad_(False)
-        self._init_filter(alpha, length, inverse)
-        self.padding = (length - 1)//2
+        self.fofe_kernel = Parameter(torch.Tensor(inplanes,1,length))
+        self.fofe_kernel.requires_grad_(False)
+        self._init_kernel(alpha, length, inverse)
+        #self.padding = (length - 1)//2
         self.inverse = inverse
 
-    def _init_filter(self, alpha, length, inverse):
+    def _init_kernel(self, alpha, length, inverse):
         if not inverse :
-            self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.linspace(length-1,0,length)))
+            self.fofe_kernel[:,:,].copy_(torch.pow(alpha, torch.linspace(length-1, 0, length)))
         else :
-            self.fofe_filter[:,:,].copy_(torch.pow(alpha,torch.range(0,length-1)))
+            self.fofe_kernel[:,:,].copy_(torch.pow(alpha, torch.range(0, length-1)))
     
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0 :
@@ -62,7 +62,7 @@ class fofe_filter(nn.Module):
             x = F.pad(x,(0, self.length-1))
         else :
             x = F.pad(x,(self.length-1, 0))
-        x = F.conv1d(x, self.fofe_filter, bias=None, stride=1, 
+        x = F.conv1d(x, self.fofe_kernel, bias=None, stride=1, 
                         padding=0, groups=self.channels)
 
         return x
@@ -83,10 +83,10 @@ class fofe_encoder(nn.Module):
     def forward(self, x):
         forward_fofe = []
         inverse_fofe = []
-        for filter in self.forward_filter:
-            forward_fofe.append(filter(x).unsqueeze(-2))
-        for filter in self.inverse_filter:
-            inverse_fofe.append(filter(x).unsqueeze(-2))
+        for forward_filter in self.forward_filter:
+            forward_fofe.append(forward_filter(x).unsqueeze(-2))
+        for inverse_filter in self.inverse_filter:
+            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
 
         forward_fofe = torch.cat(forward_fofe, dim=-2)
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)

@@ -62,22 +62,58 @@ class FOFEReader(nn.Module):
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = torch.transpose(doc_emb,-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
+
+        l_ctx_batch = []
+        r_ctx_batch = []
+        ans_batch = []
+
+        # generate positive ans and ctx batch
         ans_span = target_e - target_s
-        ans_idx = doc_emb.new_zeros(self.opt['sample_num'],dtype=torch.long)
-        ans = torch.index_select(forward_fofe[:,:, ans_span.item(), target_e.item()], dim=0, index=ans_idx)
-        left_pos = torch.randint(self.opt['sample_min_len'], self.opt['fofe_max_length'], ans_idx.shape, 
-                                    dtype=torch.long, device=doc_emb.device)
-        right_pos = torch.randint(self.opt['sample_min_len'], self.opt['fofe_max_length'], ans_idx.shape, 
-                                    dtype=torch.long, device=doc_emb.device)
+        for i in range(self.opt['sample_num']*(1-opt['neg_ratio'])):
+            ans_batch.append(forward_fofe[:,:, ans_span.item(), target_e.item()])
+            l_ctx_batch.append(forward_fofe[:, :, -1, target_s.item()-1])
+            r_ctx_batch.append(inverse_fofe[:, :, -1, target_e.item()+1])
+        l_ctx_batch = torch.cat(l_ctx_batch, dim=0)
+        r_ctx_batch = torch.cat(r_ctx_batch, dim=0)
+        ans_batch = torch.cat(ans_batch, dim=0)
+        positive_ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
+        positive_score = doc_emb.new_zeros(positive_ctx_ans.size(0)).unsqueeze(-1)
+
+        # generate negative ans and ctx batch
+        rand_ans = []
+        rand_l_ctx = []
+        rand_r_ctx = []
+        rand_length = torch.randint(0, self.opt['max_len'], (16,), dtype=torch.long, device=doc_emb.device)
+        rand_position = torch.randint(0, doc_emb.size(1), (16,), dtype=torch.long, device=doc_emb.device)
+        for i in range(16):
+            rand_ans_length = rand_length[i].item()
+            rand_l_position = rand_position - 1
+            rand_r_position = rand_position + rand_ans_length + 1
+            rand_ans.append(torch.index_select(forward_fofe[:,:, rand_ans_length, :], dim=-1, index=rand_position).squeeze(0).transpose(-1,-2))
+            rand_l_ctx.append(torch.index_select(forward_fofe[:,:, -1, :], dim=-1, index=rand_l_position).squeeze(0).transpose(-1,-2))
+            rand_r_ctx.append(torch.index_select(forward_fofe[:,:, -1, :], dim=-1, index=rand_r_position).squeeze(0).transpose(-1,-2))
+
+        neg_ans = torch.cat(rand_ans, dim=0)
+        neg_l_ctx = torch.cat(rand_l_ctx, dim=0)
+        neg_r_ctx = torch.cat(rand_r_ctx, dim=0)
+        rand_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=1)
+        rand_idx = torch.randint(0, negtive_ctx_ans.size(1),
+                                (self.opt['sample_num']*(opt['neg_ratio'],),
+                                dtype=torch.long, device=doc_emb.device)
+        negtive_ctx_ans = torch.index_select(rand_ctx_ans, dim=0, index=rand_idx)
+        negtive_score = doc_emb.new_zeros(negtive_ctx_ans.size(0)).unsqueeze(-1)
+        
+        # generate query batch
         query_fofe = self.fofe_linear(query_emb)
         query_batch = []
         for i in range(self.opt['sample_num']):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=0)
-        left_ctx = torch.index_select(forward_fofe[:,:,:,target_s.item()], dim=-1, index=left_pos).squeeze(0).transpose(-1,-2)
-        right_ctx = torch.index_select(inverse_fofe[:,:,:,target_e.item()], dim=-1, index=right_pos).squeeze(0).transpose(-1,-2)
-        dq_input = torch.cat([left_ctx, ans, right_ctx, query_batch], dim=-1)
-        target_score = doc_emb.new_ones(dq_input.size(0)).unsqueeze(-1)
+
+        # generate net input and target
+        ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=0)
+        dq_input = torch.cat([ctx_ans, query_batch], dim=-1)
+        target_score = torch.cat([positive_score, negtive_score], dim=0)
 
         return dq_input, target_score
     

@@ -108,10 +108,10 @@ def setup():
     # training
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
-    parser.add_argument('-sml', '--sample_min_len', type=int, default=2,
-                        help='minimum of the context length')
     parser.add_argument('-sn', '--sample_num', type=int, default=2,
                         help='sampling numbers for each doc')
+    parser.add_argument('-nr', '--neg_ratio', type=float, default=7/8,
+                        help='ratio of negtive sample for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
                              'e.g. "checkpoint_epoch_11.pt"')
