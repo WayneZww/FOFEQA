@@ -96,6 +96,8 @@ def setup():
                         help='log model loss per x updates (mini-batches).')
     parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
                         help='path to preprocessed data file.')
+    parser.add_argument('--meta_file', default='./data/SQuAD/meta.msgpack',
+                        help='path to preprocessed data file.')
     parser.add_argument('--model_dir', default='models',
                         help='path to store saved models.')
     parser.add_argument('--save_last_only', action='store_true',
@@ -138,7 +140,7 @@ def setup():
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)
     parser.add_argument('--question_layers', type=int, default=3)
-    parser.add_argument('--hidden_size', type=int, default=128)
+    parser.add_argument('--hidden_size', type=int, default=256)
     parser.add_argument('--num_features', type=int, default=4)
     parser.add_argument('--pos', type=str2bool, nargs='?', const=True, default=True,
                         help='use pos tags as a feature.')
@@ -201,7 +203,7 @@ def lr_decay(optimizer, lr_decay):
 
 
 def load_data(opt):
-    with open('./data/SQuAD/meta.msgpack', 'rb') as f:
+    with open(opt['meta_file'], 'rb') as f:
         meta = msgpack.load(f, encoding='utf8')
     embedding = torch.Tensor(meta['embedding'])
     opt['pretrained_words'] = True
