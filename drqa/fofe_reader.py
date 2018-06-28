@@ -189,11 +189,11 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
             loss = F.mse_loss(score, target_score)
-            if loss.item()>=0.25:
-                print(self.fnn[0].weight.grad)
+            #if loss.item()>=0.25:
+                #import pdb; pdb.set_trace()
+                #print(self.fnn[0].weight.grad)
             return loss
         else :
-            #TODO: scan all possibilities and rank to choose the best match
             dq_input, starts, ends = self.scan_all(doc_emb, query_emb)
             scores = self.fnn(dq_input)
             v, position = torch.max(scores, 0)
