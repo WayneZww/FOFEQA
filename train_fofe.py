@@ -58,16 +58,20 @@ def main():
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
-        batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
-        start = datetime.now()
-        for i, batch in enumerate(batches):
-            model.update(batch)
-            if i % args.log_per_updates == 0:
-                log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                    epoch, model.updates, model.train_loss.value,
-                    str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-        log.debug('\n')
+        if not args.test_only:
+            batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
+            start = datetime.now()
+            for i, batch in enumerate(batches):
+                model.update(batch)
+                if i % args.log_per_updates == 0:
+                    log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
+                        epoch, model.updates, model.train_loss.value,
+                        str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+            log.debug('\n')
         # eval
+        if args.test_only and args.resume:
+            break 
+
         batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
@@ -85,6 +89,9 @@ def main():
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
                 log.info('[new best model saved.]')
+
+        if args.test_only:
+            break
 
 
 def setup():
@@ -108,11 +115,13 @@ def setup():
                         const=True, default=torch.cuda.is_available(),
                         help='whether to use GPU acceleration.')
     # training
+    parser.add_argument('--test_only', action='store_true',
+                        help='whether test only')
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
     parser.add_argument('-sn', '--sample_num', type=int, default=2,
                         help='sampling numbers for each doc')
-    parser.add_argument('-nr', '--neg_ratio', type=float, default=7/8,
+    parser.add_argument('-nr', '--neg_ratio', type=float, default=3/4,
                         help='ratio of negtive sample for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
