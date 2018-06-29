@@ -117,26 +117,16 @@ class DocReaderModel(object):
 
         # Run forward
         with torch.no_grad():
-            s_idx, e_idx = self.network(*inputs)
-
-        # Transfer to CPU/normal tensors for numpy ops
-        #s_idx = s_idx.data.cpu()
-        #e_idx = e_idx.data.cpu()
+            s_idxs, e_idxs = self.network(*inputs)
 
         # Get argmax text spans
         text = ex[-2]
         spans = ex[-1]
         predictions = []
         #max_len = self.opt['max_len'] or score_s.size(1)
-        """for i in range(s_idx.size(0)):
-            #scores = torch.ger(score_s[i], score_e[i])
-            #scores.triu_().tril_(max_len - 1)
-            #scores = scores.numpy()
-            #s_idx, e_idx = np.unravel_index(np.argmax(scores), scores.shape)
-            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-            predictions.append(text[i][s_offset:e_offset])"""
-        s_offset, e_offset = spans[0][s_idx][0], spans[0][e_idx][1]
-        predictions.append(text[0][s_offset:e_offset])
+        for i in range(len(s_idxs)):          
+            s_offset, e_offset = spans[i][s_idxs[i]][0], spans[i][e_idxs[i]][1]
+            predictions.append(text[i][s_offset:e_offset])
 
         return predictions
 

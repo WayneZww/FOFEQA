@@ -119,7 +119,7 @@ def setup():
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
-    parser.add_argument('-sn', '--sample_num', type=int, default=2,
+    parser.add_argument('-sn', '--sample_num', type=int, default=256,
                         help='sampling numbers for each doc')
     parser.add_argument('-nr', '--neg_ratio', type=float, default=1/2,
                         help='ratio of negtive sample for each doc')

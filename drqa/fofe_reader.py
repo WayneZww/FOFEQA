@@ -64,21 +64,33 @@ class FOFEReader(nn.Module):
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
 
         # generate positive ans and ctx batch
+        ans_span = target_e - target_s
+        positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
+        batchsize = doc_emb.size(0)
+        ans_minibatch = []
+        l_ctx_minibatch = []
+        r_ctx_minibatch = []
+        for j in range(batchsize):
+            ans_minibatch.append(forward_fofe[j, :, ans_span[j].item(), target_e[j].item()].unsqueeze(0))
+            l_ctx_minibatch.append(forward_fofe[j, :, -1, max(target_s[j].item()-1, 0)].unsqueeze(0))
+            r_ctx_minibatch.append(inverse_fofe[j, :, -1, min(target_e[j].item()+1, doc_emb.size(-1)-1)].unsqueeze(0))
+        ans_minibatch = torch.cat(ans_minibatch, dim=0).unsqueeze(1)
+        l_ctx_minibatch = torch.cat(l_ctx_minibatch, dim=0).unsqueeze(1)
+        r_ctx_minibatch = torch.cat(r_ctx_minibatch, dim=0).unsqueeze(1)
+        
         l_ctx_batch = []
         r_ctx_batch = []
         ans_batch = []
-        ans_span = target_e - target_s
-        positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
-        for i in range(positive_num):
-            ans_batch.append(forward_fofe[:, :, ans_span.item(), target_e.item()])
-            l_ctx_batch.append(forward_fofe[:, :, -1, max(target_s.item()-1, 0)])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, min(target_e.item()+1, doc_emb.size(-1)-1)])
-        l_ctx_batch = torch.cat(l_ctx_batch, dim=0)
-        r_ctx_batch = torch.cat(r_ctx_batch, dim=0)
-        ans_batch = torch.cat(ans_batch, dim=0)
-        positive_ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
-        positive_score = doc_emb.new_ones(positive_ctx_ans.size(0)).unsqueeze(-1)
-
+        for i in range(positive_num//batchsize):                 
+            ans_batch.append(ans_minibatch)
+            l_ctx_batch.append(l_ctx_minibatch)
+            r_ctx_batch.append(r_ctx_minibatch)
+        l_ctx_batch = torch.cat(l_ctx_batch, dim=1)
+        r_ctx_batch = torch.cat(r_ctx_batch, dim=1)
+        ans_batch = torch.cat(ans_batch, dim=1)
+        positive_ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=-1)
+        positive_score = doc_emb.new_ones((positive_ctx_ans.size(0), positive_ctx_ans.size(1), 1))
+        
         # generate negative ans and ctx batch
         rand_ans = []
         rand_l_ctx = []
@@ -91,36 +103,41 @@ class FOFEReader(nn.Module):
             rand_position = torch.randint(1, doc_emb.size(-1)-rand_ans_length-1, (pos_num,), dtype=torch.long, device=doc_emb.device)
             rand_l_position = rand_position - 1
             rand_r_position = rand_position + rand_ans_length + 1
-            rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_position).squeeze(0).transpose(-1,-2))
-            rand_l_ctx.append(torch.index_select(forward_fofe[:, :, -1, :], dim=-1, index=rand_l_position).squeeze(0).transpose(-1,-2))
-            rand_r_ctx.append(torch.index_select(inverse_fofe[:, :, -1, :], dim=-1, index=rand_r_position).squeeze(0).transpose(-1,-2))
+            rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_position).transpose(-1,-2))
+            rand_l_ctx.append(torch.index_select(forward_fofe[:, :, -1, :], dim=-1, index=rand_l_position).transpose(-1,-2))
+            rand_r_ctx.append(torch.index_select(inverse_fofe[:, :, -1, :], dim=-1, index=rand_r_position).transpose(-1,-2))
         
-        neg_ans = torch.cat(rand_ans, dim=0)
-        neg_l_ctx = torch.cat(rand_l_ctx, dim=0)
-        neg_r_ctx = torch.cat(rand_r_ctx, dim=0)
-        rand_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=1)
-        rand_idx = torch.randint(0, rand_ctx_ans.size(0), (self.opt['sample_num']-positive_num,), dtype=torch.long, device=doc_emb.device)
-        negtive_ctx_ans = torch.index_select(rand_ctx_ans, dim=0, index=rand_idx)
-        negtive_score = doc_emb.new_zeros(negtive_ctx_ans.size(0)).unsqueeze(-1)
+        neg_ans = torch.cat(rand_ans, dim=1)
+        neg_l_ctx = torch.cat(rand_l_ctx, dim=1)
+        neg_r_ctx = torch.cat(rand_r_ctx, dim=1)
+        rand_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=-1)
+        rand_idx = torch.randint(0, rand_ctx_ans.size(0), ((self.opt['sample_num']-positive_num)//batchsize,), dtype=torch.long, device=doc_emb.device)
+        negtive_ctx_ans = torch.index_select(rand_ctx_ans, dim=1, index=rand_idx)
+        negtive_score = doc_emb.new_zeros((negtive_ctx_ans.size(0),negtive_ctx_ans.size(1), 1))
 
         # generate query batch
         query_fofe = self.fofe_linear(query_emb)
         query_batch = []
-        for i in range(self.opt['sample_num']):
-            query_batch.append(query_fofe)
-        query_batch = torch.cat(query_batch, dim=0)
+        for i in range(self.opt['sample_num']//batchsize):
+            query_batch.append(query_fofe.unsqueeze(1))
+        query_batch = torch.cat(query_batch, dim=1)
 
         # generate net input and target
-        ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=0)
+        ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=1)
         dq_input = torch.cat([ctx_ans, query_batch], dim=-1)
-        target_score = torch.cat([positive_score, negtive_score], dim=0)
+        target_score = torch.cat([positive_score, negtive_score], dim=1)
+
+        dq_input = dq_input.view(self.opt['sample_num'], -1)
+        target_score = target_score.view(self.opt['sample_num'], -1)
+
+        #TODO random shuffle?
 
         return dq_input, target_score
     
     def scan_all(self, doc_emb, query_emb):
         doc_emb = torch.transpose(doc_emb,-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        
+
         # generate ctx and ans batch
         l_ctx_batch = []
         r_ctx_batch = []
@@ -128,27 +145,27 @@ class FOFEReader(nn.Module):
         starts = []
         ends = []
         length = doc_emb.size(-1)
+        batchsize = doc_emb.size(0)
         for i in range(self.opt['max_len']):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-2-i].squeeze(0).transpose(-1,-2))
-            r_ctx_batch.append(inverse_fofe[:, :, -1, i+2:length].squeeze(0).transpose(-1,-2))
-            ans_batch.append(forward_fofe[:, :, i, 1+i:length-1].squeeze(0).transpose(-1,-2))
+            l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-2-i].transpose(-1,-2))
+            r_ctx_batch.append(inverse_fofe[:, :, -1, i+2:length].transpose(-1,-2))
+            ans_batch.append(forward_fofe[:, :, i, 1+i:length-1].transpose(-1,-2))
             starts.append(torch.arange(1, length-1-i).long())
             ends.append(torch.arange(i+1, length-1).long())
         
-        l_ctx_batch =torch.cat(l_ctx_batch, dim=0)
-        r_ctx_batch =torch.cat(r_ctx_batch, dim=0)
-        ans_batch = torch.cat(ans_batch, dim=0)
-        ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
+        l_ctx_batch =torch.cat(l_ctx_batch, dim=1)
+        r_ctx_batch =torch.cat(r_ctx_batch, dim=1)
+        ans_batch = torch.cat(ans_batch, dim=1)
+        ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=-1)
 
         # generate query batch
         query_fofe = self.fofe_linear(query_emb)
         query_batch = []
-        for i in range(ctx_ans.size(0)):
-            query_batch.append(query_fofe)
-        query_batch = torch.cat(query_batch, dim=0)
+        for i in range(ctx_ans.size(1)):
+            query_batch.append(query_fofe.unsqueeze(1))
+        query_batch = torch.cat(query_batch, dim=1)
 
         dq_input = torch.cat([ctx_ans, query_batch], dim=-1)
-
         starts = torch.cat(starts, dim=0)
         ends = torch.cat(ends, dim=0)
 
@@ -195,13 +212,17 @@ class FOFEReader(nn.Module):
             return loss
         else :
             dq_input, starts, ends = self.scan_all(doc_emb, query_emb)
-            scores = self.fnn(dq_input)
-            v, position = torch.max(scores, 0)
-            if v.item() >= 0.5:
-                s_idx = starts[position.item()]
-                e_idx = ends[position.item()]
-            else:
-                s_idx = -1
-                e_idx = -1
-            return s_idx, e_idx 
+            s_idxs = []
+            e_idxs = []
+            for i in range(dq_input.size(0)):
+                scores = self.fnn(dq_input[i])
+                v, position = torch.max(scores, 0)
+                if v.item() >= 0.5:
+                    s_idxs.append(starts[position.item()])
+                    e_idxs.append(ends[position.item()])
+                else:
+                    s_idxs.append(-1)
+                    e_idxs.append(-1)
+
+            return s_idxs, e_idxs 
 
