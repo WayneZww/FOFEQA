@@ -137,7 +137,7 @@ class FOFEReader(nn.Module):
 
         return dq_input, target_score
     
-    def scan_all(self, doc_emb, query_emb):
+    def scan_all(self, doc_emb, query_emb, doc_mask):
         doc_emb = torch.transpose(doc_emb,-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
 
@@ -145,6 +145,7 @@ class FOFEReader(nn.Module):
         l_ctx_batch = []
         r_ctx_batch = []
         ans_batch = []
+        mask_batch = []
         starts = []
         ends = []
         length = doc_emb.size(-1)
@@ -153,12 +154,14 @@ class FOFEReader(nn.Module):
             l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-2-i])
             r_ctx_batch.append(inverse_fofe[:, :, -1, i+2:length])
             ans_batch.append(forward_fofe[:, :, i, 1+i:length-1])
+            mask_batch.append(doc_mask[:, 1:length-1-i])
             starts.append(torch.arange(1, length-1-i, device=doc_emb.device))
             ends.append(torch.arange(i+1, length-1, device=doc_emb.device))
         
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
+        mask_batch = torch.cat(mask_batch, dim=-1)
         ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
 
         # generate query batch
@@ -172,7 +175,7 @@ class FOFEReader(nn.Module):
         starts = torch.cat(starts, dim=0).long()
         ends = torch.cat(ends, dim=0).long()
 
-        return dq_input, starts, ends
+        return dq_input, starts, ends, mask_batch
     
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
         # Embed both document and question
@@ -214,12 +217,14 @@ class FOFEReader(nn.Module):
                 #print(self.fnn[0].weight.grad)
             return loss
         else :
-            dq_input, starts, ends = self.scan_all(doc_emb, query_emb)
+            dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
             scores = self.cnn(dq_input).squeeze(1)
+            scores.data.masked_fill_(d_mask.data, -float('inf'))
             v, idx = torch.max(scores, dim=-1)
-            mask = v.ge(0.5).long()
-            position = idx + 1
-            position = position.mul(mask) - 1
+            #mask = v.ge(0.5).long()
+            #position = idx + 1
+            position = idx
+            #position = position.mul(mask) - 1
             s_idxs = torch.index_select(starts, dim=0, index=position)
             e_idxs = torch.index_select(ends, dim=0, index=position)
 
