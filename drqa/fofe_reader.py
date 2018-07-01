@@ -124,7 +124,7 @@ class FOFEReader(nn.Module):
         # generate query batch
         query_fofe = self.fofe_linear(query_emb).unsqueeze(-1)
         query_batch = []
-        length = self.opt['sample_num']//batchsize
+        length = self.opt['sample_num']
         for i in range(length):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)
@@ -212,7 +212,7 @@ class FOFEReader(nn.Module):
         if self.training :
             dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
             score = self.cnn(dq_input)
-            loss = F.mse_loss(score, target_score)
+            loss = F.mse_loss(score, target_score, size_average=False)
             #if loss.item()>=0.25:
                 #import pdb; pdb.set_trace()
                 #print(self.fnn[0].weight.grad)
