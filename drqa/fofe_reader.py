@@ -213,9 +213,6 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
             score = self.cnn(dq_input)
             loss = F.mse_loss(score, target_score, size_average=False)
-            #if loss.item()>=0.25:
-                #import pdb; pdb.set_trace()
-                #print(self.fnn[0].weight.grad)
             return loss
         else :
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
