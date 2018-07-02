@@ -115,6 +115,8 @@ def setup():
                         const=True, default=torch.cuda.is_available(),
                         help='whether to use GPU acceleration.')
     # training
+    parser.add_argument('--test_train', action='store_true',
+                        help='whether use train set as dev set for debug')
     parser.add_argument('--test_only', action='store_true',
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
@@ -225,9 +227,14 @@ def load_data(opt):
     with open(opt['data_file'], 'rb') as f:
         data = msgpack.load(f, encoding='utf8')
     train = data['train']
-    data['dev'].sort(key=lambda x: len(x[1]))
-    dev = [x[:-1] for x in data['dev']]
-    dev_y = [x[-1] for x in data['dev']]
+    if opt['test_train']:
+        data['train'].sort(key=lambda x: len(x[1]))
+        dev = [x[:-3] for x in data['train']]
+        dev_y = [x[-3] for x in data['train']]
+    else:
+        data['dev'].sort(key=lambda x: len(x[1]))
+        dev = [x[:-1] for x in data['dev']]
+        dev_y = [x[-1] for x in data['dev']]
     return train, dev, dev_y, embedding, opt
 
 
@@ -263,10 +270,11 @@ class BatchGen:
         for batch in self.data:
             batch_size = len(batch)
             batch = list(zip(*batch))
+            #import pdb; pdb.set_trace()
             if self.eval:
                 assert len(batch) == 8
             else:
-                assert len(batch) == 10
+                assert len(batch) == 11
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -300,8 +308,8 @@ class BatchGen:
             text = list(batch[6])
             span = list(batch[7])
             if not self.eval:
-                y_s = torch.LongTensor(batch[8])
-                y_e = torch.LongTensor(batch[9])
+                y_s = torch.LongTensor(batch[-2])
+                y_e = torch.LongTensor(batch[-1])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
