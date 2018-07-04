@@ -59,9 +59,9 @@ class fofe_filter(nn.Module):
         if self.alpha == 1 or self.alpha == 0 :
             return x
         if self.inverse:
-            x = F.pad(x,(0, self.length-1))
+            x = F.pad(x,(0, self.length))
         else :
-            x = F.pad(x,(self.length-1, 0))
+            x = F.pad(x,(self.length, 0))
         x = F.conv1d(x, self.fofe_kernel, bias=None, stride=1, 
                         padding=0, groups=self.channels)
 

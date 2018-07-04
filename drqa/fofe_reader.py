@@ -85,9 +85,9 @@ class FOFEReader(nn.Module):
         l_ctx_minibatch = []
         r_ctx_minibatch = []
         for j in range(batchsize):
-            ans_minibatch.append(forward_fofe[j, :, ans_span[j].item(), target_e[j].item()].unsqueeze(0))
-            l_ctx_minibatch.append(forward_fofe[j, :, -1, max(target_s[j].item()-1, 0)].unsqueeze(0))
-            r_ctx_minibatch.append(inverse_fofe[j, :, -1, min(target_e[j].item()+1, doc_emb.size(-1)-1)].unsqueeze(0))
+            ans_minibatch.append(forward_fofe[j, :, ans_span[j].item(), target_e[j].item()+1].unsqueeze(0))
+            l_ctx_minibatch.append(forward_fofe[j, :, -1, target_s[j].item()].unsqueeze(0))
+            r_ctx_minibatch.append(inverse_fofe[j, :, -1, target_e[j].item()+1].unsqueeze(0))
         ans_minibatch = torch.cat(ans_minibatch, dim=0)
         l_ctx_minibatch = torch.cat(l_ctx_minibatch, dim=0)
         r_ctx_minibatch = torch.cat(r_ctx_minibatch, dim=0)
@@ -107,9 +107,9 @@ class FOFEReader(nn.Module):
         pos_num = negtive_num//rand_length.size(0)+1
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
-            rand_position = torch.randint(1, doc_emb.size(-1)-rand_ans_length-1, (pos_num,), dtype=torch.long, device=doc_emb.device)
-            rand_l_position = rand_position - 1
-            rand_r_position = rand_position + rand_ans_length + 1
+            rand_l_position = torch.randint(0, doc_emb.size(-1)-rand_ans_length, (pos_num,), dtype=torch.long, device=doc_emb.device)
+            rand_position = rand_l_position + 1 + rand_ans_length
+            rand_r_position = rand_l_position + 1 + rand_ans_length
             rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_position))
             rand_l_ctx.append(torch.index_select(forward_fofe[:, :, -1, :], dim=-1, index=rand_l_position))
             rand_r_ctx.append(torch.index_select(inverse_fofe[:, :, -1, :], dim=-1, index=rand_r_position))
@@ -153,12 +153,12 @@ class FOFEReader(nn.Module):
         length = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
         for i in range(self.opt['max_len']):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-2-i])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, i+2:length])
-            ans_batch.append(forward_fofe[:, :, i, 1+i:length-1])
-            mask_batch.append(doc_mask[:, 1:length-1-i])
-            starts.append(torch.arange(1, length-1-i, device=doc_emb.device))
-            ends.append(torch.arange(i+1, length-1, device=doc_emb.device))
+            l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-i])
+            r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:length+1])
+            ans_batch.append(forward_fofe[:, :, i, 1+i:length+1])
+            mask_batch.append(doc_mask[:, 0:length-i])
+            starts.append(torch.arange(0, length-i, device=doc_emb.device))
+            ends.append(torch.arange(i, length, device=doc_emb.device))
         
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
@@ -183,7 +183,7 @@ class FOFEReader(nn.Module):
         length = starts.size(0)
         batchsize = scores.size(0)//length
         s_idxs = []
-        e_idxs = []
+        e_idxs = [] 
         for i in range(batchsize):
             v, idx = torch.max(scores[i*length:(i+1)*length-1], dim=0)
             if v < 0.5:
