@@ -98,8 +98,8 @@ class DocReaderModel(object):
         loss.backward()
 
         # Clip gradients it helps converges
-        torch.nn.utils.clip_grad_norm_(self.network.parameters(),
-                                      self.opt['grad_clipping'])
+        #torch.nn.utils.clip_grad_norm_(self.network.parameters(),
+        #                              self.opt['grad_clipping'])
 
         # Update parameters
         self.optimizer.step()
@@ -127,8 +127,8 @@ class DocReaderModel(object):
         text = ex[-2]
         spans = ex[-1]
         predictions = []
-        #max_len = self.opt['max_len'] or score_s.size(1)
-        for i in range(len(s_idxs)):          
+        #max_len = self.opt['max_len'] or score_s.size(1)        
+        for i in range(len(s_idxs)):         
             s_offset, e_offset = spans[i][s_idxs[i]][0], spans[i][e_idxs[i]][1]
             predictions.append(text[i][s_offset:e_offset])
 

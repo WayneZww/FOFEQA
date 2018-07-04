@@ -46,7 +46,7 @@ class FOFEReader(nn.Module):
         
         self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
         self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'])
-        
+        """
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
             nn.ReLU(inplace=True),
@@ -60,18 +60,23 @@ class FOFEReader(nn.Module):
             nn.Sigmoid()
         )
         """
-        self.cnn = nn.Sequential(
+        self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
             nn.Sigmoid()
-        )"""
+        )
+        self.count=0
 
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
@@ -129,13 +134,13 @@ class FOFEReader(nn.Module):
         for i in range(length):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)
-       
+        
         # generate net input and target with shuffle
         idx = doc_emb.new_zeros(length, dtype=torch.long)
         idx.copy_(torch.randperm(length).long())
         ctx_ans = torch.index_select(torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1), dim=-1, index=idx)
-        target_score =torch.index_select(torch.cat([positive_score, negtive_score], dim=-1), dim=-1, index=idx).transpose(-1,-2).view(batchsize*self.opt['sample_num'], -1)
-        dq_input = torch.cat([ctx_ans, query_batch], dim=1).transpose(-1,-2).contiguous().view(batchsize*self.opt['sample_num'], -1)
+        target_score =torch.index_select(torch.cat([positive_score, negtive_score], dim=-1), dim=-1, index=idx)
+        dq_input = torch.cat([ctx_ans, query_batch], dim=1)
         
         return dq_input, target_score
     
@@ -156,14 +161,14 @@ class FOFEReader(nn.Module):
             l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-i])
             r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:length+1])
             ans_batch.append(forward_fofe[:, :, i, 1+i:length+1])
-            mask_batch.append(doc_mask[:, 0:length-i])
+            mask_batch.append(doc_mask[:, i:])
             starts.append(torch.arange(0, length-i, device=doc_emb.device))
             ends.append(torch.arange(i, length, device=doc_emb.device))
         
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
-        mask_batch = torch.cat(mask_batch, dim=-1).transpose(-1,-2).contiguous().view(batchsize*ans_batch.size(-1), -1)
+        mask_batch = torch.cat(mask_batch, dim=-1)
         ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
 
         # generate query batch
@@ -173,25 +178,24 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)
         
-        dq_input = torch.cat([ctx_ans, query_batch], dim=1).transpose(-1,-2).contiguous().view(batchsize*ctx_ans.size(-1), -1)
+        dq_input = torch.cat([ctx_ans, query_batch], dim=1)
         starts = torch.cat(starts, dim=0).long()
         ends = torch.cat(ends, dim=0).long()
 
         return dq_input, starts, ends, mask_batch
 
     def rank_select(self, scores, starts, ends):
-        length = starts.size(0)
-        batchsize = scores.size(0)//length
+        batchsize = scores.size(0)
         s_idxs = []
-        e_idxs = [] 
+        e_idxs = []       
         for i in range(batchsize):
-            v, idx = torch.max(scores[i*length:(i+1)*length-1], dim=0)
-            if v < 0.5:
-                s_idxs.append(-1)
-                e_idxs.append(-1)
-            else:
-                s_idxs.append(starts[idx.item()])
-                e_idxs.append(ends[idx.item()])
+            v, idx = torch.max(scores[i], dim=0)
+            # if v < 0.5:
+            #     s_idxs.append(-1)
+            #     e_idxs.append(-1)
+            # else:
+            s_idxs.append(starts[idx.item()].item())
+            e_idxs.append(ends[idx.item()].item())
 
         return s_idxs, e_idxs
     
@@ -233,7 +237,7 @@ class FOFEReader(nn.Module):
             return loss
         else :
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
-            scores = self.fnn(dq_input)
+            scores = self.fnn(dq_input).squeeze(1)
             scores.data.masked_fill_(d_mask.data, -float('inf'))
             s_idxs, e_idxs = self.rank_select(scores, starts, ends)
            
