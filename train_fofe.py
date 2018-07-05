@@ -72,7 +72,7 @@ def main():
         if args.test_only and args.resume:
             break 
 
-        batches = BatchGen(dev, batch_size=args.batch_size//4, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(dev, batch_size=args.batch_size//4, test_train=args.test_train, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -242,7 +242,7 @@ class BatchGen:
     pos_size = None
     ner_size = None
 
-    def __init__(self, data, batch_size, gpu, evaluation=False):
+    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False):
         """
         input:
             data - list of lists
@@ -251,6 +251,7 @@ class BatchGen:
         self.batch_size = batch_size
         self.eval = evaluation
         self.gpu = gpu
+        self.test_train = test_train
 
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
@@ -271,7 +272,7 @@ class BatchGen:
             batch_size = len(batch)
             batch = list(zip(*batch))
             #import pdb; pdb.set_trace()
-            if self.eval:
+            if self.eval and not self.test_train:
                 assert len(batch) == 8
             else:
                 assert len(batch) == 11
@@ -318,11 +319,11 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            #if self.eval:
-            #    yield (context_id, context_feature, context_tag, context_ent, context_mask,
-            #           question_id, question_mask, text, span)
-            #else:
-            yield (context_id, context_feature, context_tag, context_ent, context_mask,
+            if self.eval and not self.test_train:
+                yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                       question_id, question_mask, text, span)
+            else:
+                yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, y_s, y_e, text, span)
 
 
