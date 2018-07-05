@@ -50,10 +50,6 @@ class FOFEReader(nn.Module):
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4, bias=False),
-            nn.ReLU(inplace=True),
             nn.Linear(opt['hidden_size']*4, opt['hidden_size']*2, bias=False),
             nn.ReLU(inplace=True),
             nn.Linear(opt['hidden_size']*2, 1, bias=False),
@@ -62,12 +58,6 @@ class FOFEReader(nn.Module):
         """
         self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
