@@ -229,8 +229,8 @@ def load_data(opt):
     train = data['train']
     if opt['test_train']:
         data['train'].sort(key=lambda x: len(x[1]))
-        dev = [x[:-3] for x in data['train']]
-        dev_y = [x[-3] for x in data['train']]
+        dev = [x[:] for x in data['train']]
+        dev_y = [[x[-3]] for x in data['train']]
     else:
         data['dev'].sort(key=lambda x: len(x[1]))
         dev = [x[:-1] for x in data['dev']]
@@ -318,11 +318,11 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval:
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, text, span)
-            else:
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
+            #if self.eval:
+            #    yield (context_id, context_feature, context_tag, context_ent, context_mask,
+            #           question_id, question_mask, text, span)
+            #else:
+            yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, y_s, y_e, text, span)
 
 
