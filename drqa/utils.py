@@ -31,3 +31,24 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
+def tri_num(n):
+    '''
+        Calculate Triangular Number + n;
+        Triangular Number = 1+2+...+n
+    '''
+    return round(n + (n * (n - 1) / 2))
+
+
+def count_num_substring(arg_max_substring_len, arg_string_len):
+    '''
+        Count number of substring of length <= 'max_substring_len' with in string of 'length string_len';
+    '''
+    if (arg_max_substring_len < arg_string_len):
+        max_substring_len = arg_max_substring_len
+        n_substring = tri_num(max_substring_len) + \
+                        ( (arg_string_len - max_substring_len) * max_substring_len )
+    else:
+        max_substring_len = arg_string_len
+        n_substring = tri_num(max_substring_len)
+    return n_substring, max_substring_len

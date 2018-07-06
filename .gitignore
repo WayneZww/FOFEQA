@@ -1,7 +1,13 @@
+train_fofe_debug.py
+git.sh
 data/
 drqa/__pycache__/
-exps/
+drqa/BACKUP/
 models/
+models_n_logs/
+TOBE_REMOVE/
+exps/exps_for_old_version/
+*.DS_Store
 *.log
 .vscode
 .ipynb_checkpoints/

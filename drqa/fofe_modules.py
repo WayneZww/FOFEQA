@@ -3,7 +3,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-
+from .utils import tri_num, count_num_substring
 
 class fofe_conv1d(nn.Module):
     def __init__(self, emb_dims, alpha=0.9, length=1, dilation=1, inverse=False):
@@ -139,6 +139,147 @@ class fofe_res_block(nn.Module):
         out += residual
         out = self.relu(out)
         return out
+
+
+#--------------------------------------------------------------------------------
+class fofe_linear_tricontext(nn.Module):
+    def __init__(self, embedding_dim,  alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True):
+        super(fofe_linear_tricontext, self).__init__()
+        self.alpha = alpha
+        self.cand_len_limit = cand_len_limit
+        
+        #Construct Base FOFE Buffer for full doc length
+        self.doc_len_limit = doc_len_limit
+        self._full_base_block_alpha = torch.zeros(self.doc_len_limit, self.doc_len_limit)
+        for i in range(1, self.doc_len_limit+1):
+            powers = torch.linspace(i-1,i-self.doc_len_limit,self.doc_len_limit).abs()
+            self._full_base_block_alpha[i-1,:].copy_(torch.pow(self.alpha,powers))
+    
+        #Construct Layer base on input arg
+        self.has_lr_ctx_cand_incl = has_lr_ctx_cand_incl
+        self.has_lr_ctx_cand_excl = has_lr_ctx_cand_excl
+        if ( not self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
+            self.linear = nn.Sequential(nn.Linear(embedding_dim,embedding_dim, bias=False),
+                                        nn.ReLU(inplace=True))
+        elif has_lr_ctx_cand_incl and has_lr_ctx_cand_excl:
+            self.linear = nn.Sequential(nn.Linear(embedding_dim*5,embedding_dim*5, bias=False),
+                                        nn.ReLU(inplace=True))
+        else:
+            self.linear = nn.Sequential(nn.Linear(embedding_dim*3,embedding_dim*3, bias=False),
+                                        nn.ReLU(inplace=True))
+    
+    def get_contexts_alpha_buffers(self, x_input):
+        '''
+            Derive context_alpha_buffers from _base_tril_alpha and _base_triu_alpha
+            
+            context_alpha_buffers[0] = Candidate Context alpha buffer
+            context_alpha_buffers[1] = Left Context (Candidate excluded) alpha buffer
+            context_alpha_buffers[2] = Left Context (Candidate Included) alpha buffer
+            context_alpha_buffers[3] = Right Context (Candidate excluded)alpha buffer
+            context_alpha_buffers[4] = Right Context (Candidate Included) alpha buffer
+        '''
+        #Construct Base FOFE Buffer for specific doc length;
+        doc_len = min(x_input.size(1), self.doc_len_limit)
+        _base_tril_alpha = x_input.new_zeros(doc_len,doc_len)
+        _base_triu_alpha = x_input.new_zeros(doc_len,doc_len)
+        _base_tril_alpha.copy_(self._full_base_block_alpha.tril()[:doc_len,:doc_len])
+        _base_triu_alpha.copy_(self._full_base_block_alpha.triu()[:doc_len,:doc_len])
+        
+        n_cand, max_cand_len = count_num_substring(self.cand_len_limit, doc_len)
+        context_alpha_buffers = []
+        cands_pos = x_input.new_zeros(n_cand,2)
+        
+        for i in range(5):
+            context_alpha_buffers.append(x_input.new_zeros(n_cand,doc_len))
+        
+        for i in range(doc_len):
+            if (i < doc_len - max_cand_len):
+                start_idx = i * max_cand_len
+                end_idx = (i+1) * max_cand_len
+                
+                # Candidate Context alphas buffer
+                context_alpha_buffers[0][start_idx:end_idx,i:max_cand_len+i].copy_(_base_tril_alpha[i:max_cand_len+i,i:max_cand_len+i])
+                
+                # Left Context (Candidate included) alpha buffer
+                context_alpha_buffers[2][start_idx:end_idx,:max_cand_len+i].copy_(_base_tril_alpha[i:max_cand_len+i,:max_cand_len+i])
+                
+                # Right Context (Candidate excluded) alpha buffer
+                context_alpha_buffers[3][start_idx:end_idx,1:].copy_(_base_triu_alpha[i:max_cand_len+i,:-1])
+        
+            else:
+                rev_i = doc_len-i-1
+                base_idx = (doc_len - max_cand_len) * max_cand_len
+                start_idx = base_idx + tri_num(max_cand_len) - tri_num(rev_i+1)
+                end_idx = base_idx + tri_num(max_cand_len) - tri_num(rev_i)
+                
+                # Candidate Context alphas buffer
+                context_alpha_buffers[0][start_idx:end_idx,i:doc_len].copy_(_base_tril_alpha[i:doc_len,i:doc_len])
+                
+                # Left Context (Candidate included) alpha buffer
+                context_alpha_buffers[2][start_idx:end_idx,:].copy_(_base_tril_alpha[i:doc_len,:doc_len])
+                
+                # Right Context (Candidate excluded) alpha buffer
+                context_alpha_buffers[3][start_idx:end_idx,1:].copy_(_base_triu_alpha[i:doc_len,:-1])
+            
+            if (i > 0):
+                # SINCE: left context doesn't exist for BOS (begin of sentence) candidates,
+                #   SO: leave the values as zero (when i == 0).
+                context_alpha_buffers[1][start_idx:end_idx,:].copy_(_base_tril_alpha[i-1,:doc_len].expand(end_idx-start_idx,doc_len))
+
+            # Right Context (Candidate included) alpha buffer
+            context_alpha_buffers[4][start_idx:end_idx,:].copy_(_base_triu_alpha[i,:doc_len].expand(end_idx-start_idx,doc_len))
+
+            # Candidate Positions within Doc
+            cands_pos[start_idx:end_idx, 0] = i
+            cands_pos[start_idx:end_idx, 1].copy_(torch.range(i, i+end_idx-start_idx-1))
+        
+        return context_alpha_buffers, cands_pos
+    
+    def forward(self, x_input):
+        # TODO @SED [PRIORITY 1]: FIX PADDING / BATCHSIZE>1 ISSUE in DOC_FOFE
+        #                   IDEA: bmm(context_alpha_buffer, doc_mask) then sum each row;
+        #                         this should tell the row of the cands that included padding
+        batch_size = x_input.size(0)
+        length = min(x_input.size(1), self.doc_len_limit)
+        embedding_dim = x_input.size(2)
+        
+        context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input)
+        n_cand = context_alpha_buffer[0].size(0)
+        n_context_types = len(context_alpha_buffer)
+        #context_alpha_buffers[0] = Candidate Context alpha buffer
+        #context_alpha_buffers[1] = Left Context (Candidate excluded) alpha buffer
+        #context_alpha_buffers[2] = Left Context (Candidate Included) alpha buffer
+        #context_alpha_buffers[3] = Right Context (Candidate excluded)alpha buffer
+        #context_alpha_buffers[4] = Right Context (Candidate Included) alpha buffer
+
+        _batchwise_alpha_buffer = []
+        _batchwise_fofe_codes = []
+        # TODO @SED: No need to multiply all 5 contexts types; move this to IF statement below.
+        for i in range(n_context_types):
+            _batchwise_alpha_buffer.append(context_alpha_buffer[i].expand(batch_size, n_cand, length))
+            _batchwise_fofe_codes.append(torch.bmm(_batchwise_alpha_buffer[i],x_input))
+        
+        if ( not self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
+            batchwise_fofe_codes = _batchwise_fofe_codes[0]
+        elif ( not self.has_lr_ctx_cand_incl ) and ( self.has_lr_ctx_cand_excl ):
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
+                                              _batchwise_fofe_codes[1],
+                                              _batchwise_fofe_codes[3]], dim=-1)
+        elif ( self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
+                                              _batchwise_fofe_codes[2],
+                                              _batchwise_fofe_codes[4]], dim=-1)
+        else:
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
+                                              _batchwise_fofe_codes[1],
+                                              _batchwise_fofe_codes[3],
+                                              _batchwise_fofe_codes[2],
+                                              _batchwise_fofe_codes[4]], dim=-1)
+        batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
+        output = self.linear(batchwise_fofe_codes)
+        return output, batchwise_cands_pos
+
+#--------------------------------------------------------------------------------
 
 
 class fofe_linear(nn.Module):

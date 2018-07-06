@@ -18,7 +18,9 @@ from drqa.utils import str2bool
 def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
+    # ---------------------------------------------------------------------------------
     train, dev, dev_y, embedding, opt = load_data(vars(args))
+    # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -76,7 +78,7 @@ def main():
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
-            log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
+            log.debug('> evaluating dev set [{}/{}]'.format(i, len(batches)))
         em, f1 = score(predictions, dev_y)
         log.warning("dev EM: {} F1: {}".format(em, f1))
         # save
@@ -148,6 +150,12 @@ def setup():
                         help='perform rnn padding (much slower but more accurate).')
 
     # model
+    # ---------------------------------------------------------------------------------
+    parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
+                        help='Have the Left/Right Contexts that include Candidates')
+    parser.add_argument('--contexts_excl_cand', type=str2bool, nargs='?', const=True, default=True,
+                        help='Have the Left/Right Contexts that exclude Candidates')
+    # ---------------------------------------------------------------------------------
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)
     parser.add_argument('--question_layers', type=int, default=3)
@@ -263,6 +271,7 @@ class BatchGen:
             random.shuffle(data)
 
         self.data = data
+
 
     def __len__(self):
         return len(self.data)

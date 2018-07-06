@@ -101,23 +101,40 @@ class DocReaderModel(object):
         else:
             inputs = [Variable(e) for e in ex[:7]]
 
+        #----------------------------------------------------------------------------
+        #TODO @SED: CHECK THE PREDICTION
         # Run forward
         with torch.no_grad():
-            s_idxs, e_idxs = self.network(*inputs)
-        
-        # used target to do test
-        # s_idxs = ex[7].data.cpu()
-        # e_idxs = ex[8].data.cpu()
-        
-        # Get argmax text spans
+            predict_s_idx, predict_e_idx = self.network(*inputs)
+
+        # Get text prediction
         text = ex[-2]
         spans = ex[-1]
         predictions = []
-        #max_len = self.opt['max_len'] or score_s.size(1)        
-        for i in range(len(s_idxs)):         
-            s_offset, e_offset = spans[i][s_idxs[i]][0], spans[i][e_idxs[i]][1]
-            predictions.append(text[i][s_offset:e_offset])
-
+        for i in range(len(predict_s_idx)):
+            try:
+                s_idx = predict_s_idx[i]
+                e_idx = predict_e_idx[i]
+                #if s_idx < 0 or e_idx < 0:
+                #    predictions.append("<UNK>")
+                #else:
+                #    s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+                #    predictions.append(text[i][s_offset:e_offset])
+                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+                predictions.append(text[i][s_offset:e_offset])
+            except Exception as e:
+                #TODO @SED: CURRENT HAVE PROBLEM OF SOMETIME PREDICTING AN OUT OF BOUND, WHEN BATCHSIZE > 1
+                #           -Suspect that it predict the padding, since we test without training.
+                print("--------------------------------------------------------------")
+                print(e)
+                print("s_idx:", s_idx)
+                print("e_idx:", e_idx)
+                print("spans[i]:", spans[i])
+                print("spans:", spans)
+                print("text", text)
+                predictions.append("<PAD>")
+                import pdb;pdb.set_trace()
+        #----------------------------------------------------------------------------
         return predictions
 
     def save(self, filename, epoch, scores):

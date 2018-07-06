@@ -91,9 +91,9 @@ def main():
         'train': train,
         'dev': dev
     }
-    # train: id, context_id, context_features  , tag_id, ent_id,
-    #        question_id, context, context_token_span, answer_start, answer_end
-    # dev:   id, context_id, context_featur es, tag_id, ent_id,
+    # train: id, context_id, context_features, tag_id, ent_id,
+    #        question_id, context, context_token_span, answer, answer_start, answer_end
+    # dev:   id, context_id, context_features, tag_id, ent_id,
     #        question_id, context, context_token_span, answer
     with open('./data/SQuAD/data-test.msgpack', 'wb') as f:
         msgpack.dump(result, f)
@@ -209,17 +209,24 @@ def annotate(row, wv_cased):
     return (id_, context_tokens, context_features, context_tags, context_ents,
             question_tokens, context, context_token_span) + row[3:]
 
-
+# ---------------------------------------------------------------------------------
 def index_answer(row):
     token_span = row[-4]
     starts, ends = zip(*token_span)
     answer_start = row[-2]
     answer_end = row[-1]
     try:
+<<<<<<< HEAD
         # This place, it give up starts, originally it is -3
         return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
         return row[:-2] + (None, None)
+=======
+        return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
+    except ValueError:
+        return row[:-2] + (None, None)
+# ---------------------------------------------------------------------------------
+>>>>>>> test
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):
