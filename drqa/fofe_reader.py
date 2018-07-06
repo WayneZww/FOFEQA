@@ -187,7 +187,7 @@ class FOFEReader(nn.Module):
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        import pdb;pdb.set_trace()
+
         # generate positive ans and ctx batch
         ans_span = target_e - target_s
         positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
@@ -347,11 +347,13 @@ class FOFEReader(nn.Module):
             return loss
         else :
             #--------------------------------------------------------------------------------
-            """dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
+            dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
             score = self.fnn(dq_input)
             predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
-            return predict_s, predict_e"""
+            return predict_s, predict_e
             #--------------------------------------------------------------------------------
+            
+            """
             import pdb;pdb.set_trace()
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
             scores = self.fnn(dq_input).squeeze(1)
@@ -359,7 +361,8 @@ class FOFEReader(nn.Module):
             s_idxs, e_idxs = self.rank_select(scores, starts, ends)
            
             return s_idxs, e_idxs 
-          
+            """
+
             
 
 

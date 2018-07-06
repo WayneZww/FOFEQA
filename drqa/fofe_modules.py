@@ -154,20 +154,7 @@ class fofe_linear_tricontext(nn.Module):
         for i in range(1, self.doc_len_limit+1):
             powers = torch.linspace(i-1,i-self.doc_len_limit,self.doc_len_limit).abs()
             self._full_base_block_alpha[i-1,:].copy_(torch.pow(self.alpha,powers))
-    
-        #Construct Layer base on input arg
-        self.has_lr_ctx_cand_incl = has_lr_ctx_cand_incl
-        self.has_lr_ctx_cand_excl = has_lr_ctx_cand_excl
-        if ( not self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
-            self.linear = nn.Sequential(nn.Linear(embedding_dim,embedding_dim, bias=False),
-                                        nn.ReLU(inplace=True))
-        elif has_lr_ctx_cand_incl and has_lr_ctx_cand_excl:
-            self.linear = nn.Sequential(nn.Linear(embedding_dim*5,embedding_dim*5, bias=False),
-                                        nn.ReLU(inplace=True))
-        else:
-            self.linear = nn.Sequential(nn.Linear(embedding_dim*3,embedding_dim*3, bias=False),
-                                        nn.ReLU(inplace=True))
-    
+
     def get_contexts_alpha_buffers(self, x_input):
         '''
             Derive context_alpha_buffers from _base_tril_alpha and _base_triu_alpha
@@ -276,7 +263,6 @@ class fofe_linear_tricontext(nn.Module):
                                               _batchwise_fofe_codes[2],
                                               _batchwise_fofe_codes[4]], dim=-1)
         batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
-        #output = self.linear(batchwise_fofe_codes)
         return batchwise_fofe_codes, batchwise_cands_pos
 
 #--------------------------------------------------------------------------------
