@@ -118,7 +118,7 @@ class FOFEReader(nn.Module):
         # TODO @SED [PRIORITY 2]: FIX PADDING / BATCHSIZE>1 ISSUE in QUERY_FOFE.
         _doc_fofe, _cands_ans_pos = self.fofe_tricontext_encoder(doc_emb)
         _query_fofe = self.fofe_linear(query_emb)
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         batch_size = _query_fofe.size(0)
         query_embedding_dim = _query_fofe.size(-1)
         doc_embedding_dim = _doc_fofe.size(-1)
@@ -187,7 +187,7 @@ class FOFEReader(nn.Module):
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        import pdb;pdb.set_trace()
+        
         # generate positive ans and ctx batch
         ans_span = target_e - target_s
         positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
@@ -340,13 +340,13 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training :
             #--------------------------------------------------------------------------------            
-            #dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
-            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
+            dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
+            #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
             loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
-            import pdb;pdb.set_trace()
+            # import pdb;pdb.set_trace()
             #--------------------------------------------------------------------------------
             #dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
             #score = self.fnn(dq_input)
