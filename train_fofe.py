@@ -72,7 +72,7 @@ def main():
         if args.test_only and args.resume:
             break 
 
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(dev, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -115,6 +115,8 @@ def setup():
                         const=True, default=torch.cuda.is_available(),
                         help='whether to use GPU acceleration.')
     # training
+    parser.add_argument('--test_train', action='store_true',
+                        help='whether use train set as dev set for debug')
     parser.add_argument('--test_only', action='store_true',
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
@@ -225,9 +227,14 @@ def load_data(opt):
     with open(opt['data_file'], 'rb') as f:
         data = msgpack.load(f, encoding='utf8')
     train = data['train']
-    data['dev'].sort(key=lambda x: len(x[1]))
-    dev = [x[:-1] for x in data['dev']]
-    dev_y = [x[-1] for x in data['dev']]
+    if opt['test_train']:
+        data['train'].sort(key=lambda x: len(x[1]))
+        dev = [x[:] for x in data['train']]
+        dev_y = [[x[-3]] for x in data['train']]
+    else:
+        data['dev'].sort(key=lambda x: len(x[1]))
+        dev = [x[:-1] for x in data['dev']]
+        dev_y = [x[-1] for x in data['dev']]
     return train, dev, dev_y, embedding, opt
 
 
@@ -235,7 +242,7 @@ class BatchGen:
     pos_size = None
     ner_size = None
 
-    def __init__(self, data, batch_size, gpu, evaluation=False):
+    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False):
         """
         input:
             data - list of lists
@@ -244,6 +251,7 @@ class BatchGen:
         self.batch_size = batch_size
         self.eval = evaluation
         self.gpu = gpu
+        self.test_train = test_train
 
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
@@ -263,10 +271,11 @@ class BatchGen:
         for batch in self.data:
             batch_size = len(batch)
             batch = list(zip(*batch))
-            if self.eval:
+
+            if self.eval and not self.test_train:
                 assert len(batch) == 8
             else:
-                assert len(batch) == 10
+                assert len(batch) == 11
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -299,9 +308,9 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval:
-                y_s = torch.LongTensor(batch[8])
-                y_e = torch.LongTensor(batch[9])
+            if not self.eval or self.test_train:
+                y_s = torch.LongTensor(batch[-2])
+                y_e = torch.LongTensor(batch[-1])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
@@ -310,7 +319,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval:
+            if self.eval and not self.test_train:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, text, span)
             else:

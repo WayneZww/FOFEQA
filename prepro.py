@@ -85,17 +85,17 @@ def main():
         'embedding': embeddings.tolist(),
         'wv_cased': args.wv_cased,
     }
-    with open('./data/SQuAD/meta.msgpack', 'wb') as f:
+    with open('./data/SQuAD/meta-test.msgpack', 'wb') as f:
         msgpack.dump(meta, f)
     result = {
         'train': train,
         'dev': dev
     }
-    # train: id, context_id, context_features, tag_id, ent_id,
+    # train: id, context_id, context_features  , tag_id, ent_id,
     #        question_id, context, context_token_span, answer_start, answer_end
-    # dev:   id, context_id, context_features, tag_id, ent_id,
+    # dev:   id, context_id, context_featur es, tag_id, ent_id,
     #        question_id, context, context_token_span, answer
-    with open('./data/SQuAD/data.msgpack', 'wb') as f:
+    with open('./data/SQuAD/data-test.msgpack', 'wb') as f:
         msgpack.dump(result, f)
     if args.sample_size:
         sample = {
@@ -216,7 +216,8 @@ def index_answer(row):
     answer_start = row[-2]
     answer_end = row[-1]
     try:
-        return row[:-3] + (starts.index(answer_start), ends.index(answer_end))
+        # This place, it give up starts, originally it is -3
+        return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
         return row[:-3] + (None, None)
 
