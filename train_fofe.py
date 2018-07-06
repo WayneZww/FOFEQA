@@ -38,7 +38,7 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
-        batches = BatchGen(dev, batch_size=args.batch_size//4, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -72,7 +72,7 @@ def main():
         if args.test_only and args.resume:
             break 
 
-        batches = BatchGen(dev, batch_size=args.batch_size//4, test_train=args.test_train, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(dev, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -271,7 +271,7 @@ class BatchGen:
         for batch in self.data:
             batch_size = len(batch)
             batch = list(zip(*batch))
-            #import pdb; pdb.set_trace()
+
             if self.eval and not self.test_train:
                 assert len(batch) == 8
             else:
@@ -308,7 +308,7 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval:
+            if not self.eval or self.test_train:
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.gpu:

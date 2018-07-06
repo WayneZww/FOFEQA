@@ -108,7 +108,7 @@ class DocReaderModel(object):
     def predict(self, ex):
         # Eval mode
         self.network.eval()
-        """
+
         # Transfer to GPU
         if self.opt['cuda']:
             inputs = [Variable(e.cuda(async=True)) for e in ex[:7]]
@@ -118,10 +118,11 @@ class DocReaderModel(object):
         # Run forward
         with torch.no_grad():
             s_idxs, e_idxs = self.network(*inputs)
-        """
+
         # Transfer to CPU/normal tensors for numpy ops
-        s_idxs = ex[7].data.cpu()
-        e_idxs = ex[8].data.cpu()
+        # used target to do test
+        # s_idxs = ex[7].data.cpu()
+        # e_idxs = ex[8].data.cpu()
         
         # Get argmax text spans
         text = ex[-2]
