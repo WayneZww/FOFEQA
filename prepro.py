@@ -126,7 +126,7 @@ def setup():
                              'Otherwise consider question words first.')
     parser.add_argument('--sample_size', type=int, default=0,
                         help='size of sample data (for debugging).')
-    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count(), 16),
+    parser.add_argument('--threads', type=int, default=min(multiprocessing.cpu_count()-1, 16),
                         help='number of threads for preprocessing.')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='batch size for multiprocess tokenizing and tagging.')
@@ -219,7 +219,7 @@ def index_answer(row):
         # This place, it give up starts, originally it is -3
         return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
-        return row[:-3] + (None, None)
+        return row[:-2] + (None, None)
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):
