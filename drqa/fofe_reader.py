@@ -46,7 +46,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        #self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -118,7 +118,7 @@ class FOFEReader(nn.Module):
         # TODO @SED [PRIORITY 2]: FIX PADDING / BATCHSIZE>1 ISSUE in QUERY_FOFE.
         _doc_fofe, _cands_ans_pos = self.fofe_tricontext_encoder(doc_emb)
         _query_fofe = self.fofe_linear(query_emb)
-        
+        import pdb;pdb.set_trace()
         batch_size = _query_fofe.size(0)
         query_embedding_dim = _query_fofe.size(-1)
         doc_embedding_dim = _doc_fofe.size(-1)
@@ -147,13 +147,16 @@ class FOFEReader(nn.Module):
                 
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
-                if (ans_s < doc_len - max_cand_len):
-                    ans_base_idx = ans_s * max_cand_len
-                else:
-                    rev_ans_s = doc_len - ans_s - 1
-                    base_idx_of_ans_base_idx = (doc_len - max_cand_len) * max_cand_len
-                    ans_base_idx = base_idx_of_ans_base_idx + tri_num(max_cand_len) - tri_num(rev_ans_s+1)
-                ans_idx = currbatch_base_idx + ans_base_idx + ans_span
+                def get_sample_index(ans_s, ans_span, doc_len, max_cand_len):
+                    if (ans_s < doc_len - max_cand_len):
+                        ans_base_idx = ans_s * max_cand_len
+                    else:
+                        rev_ans_s = doc_len - ans_s - 1
+                        base_idx_of_ans_base_idx = (doc_len - max_cand_len) * max_cand_len
+                        ans_base_idx = base_idx_of_ans_base_idx + tri_num(max_cand_len) - tri_num(rev_ans_s+1)
+                    ans_idx = currbatch_base_idx + ans_base_idx + ans_span
+                    return ans_idx
+                ans_idx = get_sample_index(ans_s, ans_span, doc_len, max_cand_len)
                 target_score[ans_idx] = 1
                 
                 # 3. Sampling
@@ -184,7 +187,7 @@ class FOFEReader(nn.Module):
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        
+        import pdb;pdb.set_trace()
         # generate positive ans and ctx batch
         ans_span = target_e - target_s
         positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
@@ -243,6 +246,8 @@ class FOFEReader(nn.Module):
         idx.copy_(torch.randperm(length).long())
         ctx_ans = torch.index_select(torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1), dim=-1, index=idx)
         target_score =torch.index_select(torch.cat([positive_score, negtive_score], dim=-1), dim=-1, index=idx)
+        #ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1)
+        #target_score = torch.cat([positive_score, negtive_score], dim=-1)
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
         
         return dq_input, target_score
@@ -334,19 +339,20 @@ class FOFEReader(nn.Module):
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training :
-            #--------------------------------------------------------------------------------
+            #--------------------------------------------------------------------------------            
             #dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
             dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
             loss = F.mse_loss(score, target_score, size_average=False)
             return loss
-        else :"""
+        else :
             #--------------------------------------------------------------------------------
-            dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
+            """dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
             score = self.fnn(dq_input)
             predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
             return predict_s, predict_e"""
             #--------------------------------------------------------------------------------
+            import pdb;pdb.set_trace()
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
             scores = self.fnn(dq_input).squeeze(1)
             scores.data.masked_fill_(d_mask.data, -float('inf'))

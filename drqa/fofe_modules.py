@@ -276,8 +276,8 @@ class fofe_linear_tricontext(nn.Module):
                                               _batchwise_fofe_codes[2],
                                               _batchwise_fofe_codes[4]], dim=-1)
         batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
-        output = self.linear(batchwise_fofe_codes)
-        return output, batchwise_cands_pos
+        #output = self.linear(batchwise_fofe_codes)
+        return batchwise_fofe_codes, batchwise_cands_pos
 
 #--------------------------------------------------------------------------------
 

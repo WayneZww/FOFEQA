@@ -168,7 +168,7 @@ def setup():
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', type=float, default=0.8)
-    parser.add_argument('--fofe_max_length', type=int, default=9)
+    parser.add_argument('--fofe_max_length', type=int, default=64)
 
     args = parser.parse_args()
 
