@@ -129,6 +129,9 @@ class FOFEReader(nn.Module):
         query_fofe.copy_(_query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim))
         dq_input = _doc_fofe.new_empty(batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim)
         dq_input.copy_(torch.cat([_doc_fofe, query_fofe], dim=-1).view([batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim]))
+
+        doc_len = min(doc_emb.size(1), self.fofe_tricontext_encoder.doc_len_limit)
+        max_cand_len = self.fofe_tricontext_encoder.cand_len_limit
         
         if self.training:
             assert (target_s is not None) and (target_e is not None), "This is supervise learning, must have target during training"
@@ -137,14 +140,11 @@ class FOFEReader(nn.Module):
             _samples_idx = []
             n_neg_samples = round(self.opt['sample_num'] * self.opt['neg_ratio'])
             n_pos_samples = self.opt['sample_num'] - n_neg_samples
-            for i in range(target_s.size(0)):
+            for i in range(doc_emb.size(0)):
                 # 2. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
-                doc_len = min(doc_emb.size(1), self.fofe_tricontext_encoder.doc_len_limit)
-                max_cand_len = self.fofe_tricontext_encoder.cand_len_limit
-                
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
                 def get_sample_index(ans_s, ans_span, doc_len, max_cand_len):
@@ -255,7 +255,7 @@ class FOFEReader(nn.Module):
     def scan_all(self, doc_emb, query_emb, doc_mask):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        
+
         # generate ctx and ans batch
         l_ctx_batch = []
         r_ctx_batch = []
@@ -346,13 +346,13 @@ class FOFEReader(nn.Module):
             loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
-            #--------------------------------------------------------------------------------
-            """dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
-            score = self.fnn(dq_input)
-            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
-            return predict_s, predict_e"""
-            #--------------------------------------------------------------------------------
             import pdb;pdb.set_trace()
+            #--------------------------------------------------------------------------------
+            #dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
+            #score = self.fnn(dq_input)
+            #predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
+            # return predict_s, predict_e
+            #--------------------------------------------------------------------------------
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
             scores = self.fnn(dq_input).squeeze(1)
             scores.data.masked_fill_(d_mask.data, -float('inf'))
