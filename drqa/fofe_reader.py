@@ -188,7 +188,10 @@ class FOFEReader(nn.Module):
         rand_position = []
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
-            rand_position.append(random.sample(list(range(doc_len-rand_ans_length)), int(pos_num)))    
+            if doc_len-rand_ans_length >= pos_num:
+                rand_position.append(random.sample(list(range(doc_len-rand_ans_length)), int(pos_num)))   
+            else:
+                rand_position.append(torch.randint(0, doc_len-rand_ans_length, (pos_num,), dtype=torch.long))    
 
         return rand_length, rand_position
 
@@ -235,22 +238,18 @@ class FOFEReader(nn.Module):
         neg_ans = torch.cat(rand_ans, dim=-1)
         neg_l_ctx = torch.cat(rand_l_ctx, dim=-1)
         neg_r_ctx = torch.cat(rand_r_ctx, dim=-1)
-        rand_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=1)
-        rand_idx = torch.randint(0, rand_ctx_ans.size(0), (negtive_num,), dtype=torch.long, device=doc_emb.device)
-        negtive_ctx_ans = torch.index_select(rand_ctx_ans, dim=-1, index=rand_idx)
+        negtive_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=1)
         negtive_score = doc_emb.new_zeros((negtive_ctx_ans.size(0), 1, negtive_ctx_ans.size(-1)))
         
         # generate query batch
         query_fofe = self.fofe_linear(query_emb).unsqueeze(-1)
         query_batch = []
-        length = self.opt['sample_num']
-        for i in range(length):
+        for i in range(self.opt['sample_num']):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)
         
         # generate net input and target with shuffle
-        idx = doc_emb.new_zeros(length, dtype=torch.long)
-        idx.copy_(torch.randperm(length).long())
+        idx = doc_emb.new_tensor(torch.randperm(self.opt['sample_num']), dtype=torch.long)
         ctx_ans = torch.index_select(torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1), dim=-1, index=idx)
         target_score =torch.index_select(torch.cat([positive_score, negtive_score], dim=-1), dim=-1, index=idx)
         #ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1)
