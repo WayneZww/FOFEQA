@@ -181,6 +181,16 @@ class FOFEReader(nn.Module):
             return dq_input, cands_ans_pos
 
     #--------------------------------------------------------------------------------
+    def gen_random(self, doc_len):
+        rand_length = torch.randperm(min(self.opt['max_len'], doc_len-2))
+        negtive_num = self.opt['sample_num']*self.opt['neg_ratio']
+        pos_num = negtive_num//rand_length.size(0)+1
+        rand_position = []
+        for i in range(rand_length.size(0)):
+            rand_ans_length = rand_length[i].item()
+            rand_position.append(random.sample(list(range(doc_len-rand_ans_length)), int(pos_num)))    
+
+        return rand_length, rand_position
 
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
@@ -206,17 +216,15 @@ class FOFEReader(nn.Module):
             positive_ctx_ans.append(positive_ctx_ans_minibatch)
         positive_ctx_ans = torch.cat(positive_ctx_ans, dim=-1)
         positive_score = doc_emb.new_ones((positive_ctx_ans.size(0), 1, positive_ctx_ans.size(-1)))
-        
+        import pdb; pdb.set_trace()
         # generate negative ans and ctx batch
         rand_ans = []
         rand_l_ctx = []
         rand_r_ctx = []
-        negtive_num = self.opt['sample_num']-positive_num
-        rand_length = torch.randperm(min(self.opt['max_len'], doc_emb.size(-1)-2))
-        pos_num = negtive_num//rand_length.size(0)+1
+        rand_length, rand_position = self.gen_random(doc_emb.size(-1))      
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
-            rand_l_position = torch.randint(0, doc_emb.size(-1)-rand_ans_length, (pos_num,), dtype=torch.long, device=doc_emb.device)
+            rand_l_position = doc_emb.new_tensor(rand_position[i], dtype=torch.long)
             rand_position = rand_l_position + 1 + rand_ans_length
             rand_r_position = rand_l_position + 1 + rand_ans_length
             rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_position))
@@ -250,7 +258,7 @@ class FOFEReader(nn.Module):
         
         return dq_input, target_score
     
-    def scan_all(self, doc_emb, query_emb, doc_mask):
+    def scan_all(self, doc_emb, query_emb, doc_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
 
