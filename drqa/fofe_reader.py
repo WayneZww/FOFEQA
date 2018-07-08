@@ -216,18 +216,19 @@ class FOFEReader(nn.Module):
             positive_ctx_ans.append(positive_ctx_ans_minibatch)
         positive_ctx_ans = torch.cat(positive_ctx_ans, dim=-1)
         positive_score = doc_emb.new_ones((positive_ctx_ans.size(0), 1, positive_ctx_ans.size(-1)))
-        import pdb; pdb.set_trace()
+
         # generate negative ans and ctx batch
         rand_ans = []
         rand_l_ctx = []
         rand_r_ctx = []
-        rand_length, rand_position = self.gen_random(doc_emb.size(-1))      
+        rand_length, rand_position = self.gen_random(doc_emb.size(-1))   
+        negtive_num = self.opt['sample_num']*self.opt['neg_ratio']   
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
             rand_l_position = doc_emb.new_tensor(rand_position[i], dtype=torch.long)
-            rand_position = rand_l_position + 1 + rand_ans_length
+            rand_ans_position = rand_l_position + 1 + rand_ans_length
             rand_r_position = rand_l_position + 1 + rand_ans_length
-            rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_position))
+            rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_ans_position))
             rand_l_ctx.append(torch.index_select(forward_fofe[:, :, -1, :], dim=-1, index=rand_l_position))
             rand_r_ctx.append(torch.index_select(inverse_fofe[:, :, -1, :], dim=-1, index=rand_r_position))
         
