@@ -266,7 +266,7 @@ class FOFEReader(nn.Module):
         if self.training:
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
-            max_len = int(max(self.opt['max_len'], v))
+            max_len = int(max(self.opt['max_len'], v+1))
         else:
             max_len = int(min(self.opt['max_len'], doc_len))
 
