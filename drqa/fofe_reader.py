@@ -72,8 +72,10 @@ class FOFEReader(nn.Module):
         """
         self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
             nn.Sigmoid()
@@ -296,31 +298,15 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-	#import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         if self.training:
             can_scores = dq_input.new_zeros(dq_input.size(0), 1, dq_input.size(-1))
-            negative_num = int(self.opt['sample_num']*self.opt['neg_ratio'])
-            positive_num = int(self.opt['sample_num'] - negative_num)
-            sample_dq_batch = []
-            sample_score_batch = []
-            for i in range(batchsize):
-                ans_len = ans_span[i].item()
-                ans_base = int((doc_len*2 + 1 - ans_len) / 2 * ans_len)
-                ans_idx = int(ans_base + target_s[i].item())
-                can_scores[i,:,ans_idx].fill_(1)
-                neg_samples_population = list(range(0, ans_idx)) + list(range(ans_idx+1, dq_input.size(-1)))
-                if len(neg_samples_population) >= negative_num:
-                    _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num))
-                else:
-                    _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num//2)) + (random.sample(neg_samples_population, negative_num//2))
-
-                random.shuffle(_currbatch_samples_idx)
-                currbatch_samples_idx = dq_input.new_tensor(_currbatch_samples_idx, dtype=torch.long)
-                sample_dq_batch.append(torch.index_select(dq_input[i], dim=-1, index=currbatch_samples_idx).unsqueeze(0))
-                sample_score_batch.append(torch.index_select(can_scores[i], dim=-1, index=currbatch_samples_idx).unsqueeze(0))
-            sample_dq_batch = torch.cat(sample_dq_batch, dim=0)
-            sample_score_batch = torch.cat(sample_score_batch, dim=0)
-            return sample_dq_batch, sample_score_batch
+            ans_base = torch.mul(ans_span, -1).add(doc_len*2 + 1).div(2).mul(ans_span).long()
+            ans_idx = ans_base + target_s
+            for i in range(ans_idx.size(0)):
+                can_scores[i,:,ans_idx[i].item()].fill_(1)
+            return dq_input, can_scores
+            #return dq_input, ans_idx
         else:
             for i in range(self.opt['max_len']):
                 mask_batch.append(doc_mask[:, i:])
@@ -384,6 +370,8 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
+            #score = F.log_softmax(score, dim=-1).squeeze(1)
+            #loss = F.nll_loss(score, target_score)
             loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
