@@ -226,7 +226,7 @@ class FOFEReader(nn.Module):
         rand_r_ctx = []
         rand_length, rand_position = self.gen_random(doc_emb.size(-1))   
         negtive_num = self.opt['sample_num']*self.opt['neg_ratio']   
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
             rand_l_position = doc_emb.new_tensor(rand_position[i], dtype=torch.long)
@@ -266,7 +266,7 @@ class FOFEReader(nn.Module):
         if self.training:
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
-            max_len = int(max(self.opt['max_len'], v))
+            max_len = int(max(self.opt['max_len'], v+1))
         else:
             max_len = int(min(self.opt['max_len'], doc_len))
 
@@ -296,7 +296,7 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-
+	#import pdb; pdb.set_trace()
         if self.training:
             can_scores = dq_input.new_zeros(dq_input.size(0), 1, dq_input.size(-1))
             negative_num = int(self.opt['sample_num']*self.opt['neg_ratio'])
@@ -309,7 +309,11 @@ class FOFEReader(nn.Module):
                 ans_idx = int(ans_base + target_s[i].item())
                 can_scores[i,:,ans_idx].fill_(1)
                 neg_samples_population = list(range(0, ans_idx)) + list(range(ans_idx+1, dq_input.size(-1)))
-                _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num))
+                if len(neg_samples_population) >= negative_num:
+                    _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num))
+                else:
+                    _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num//2)) + (random.sample(neg_samples_population, negative_num//2))
+
                 random.shuffle(_currbatch_samples_idx)
                 currbatch_samples_idx = dq_input.new_tensor(_currbatch_samples_idx, dtype=torch.long)
                 sample_dq_batch.append(torch.index_select(dq_input[i], dim=-1, index=currbatch_samples_idx).unsqueeze(0))
