@@ -263,6 +263,13 @@ class FOFEReader(nn.Module):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
 
+        if self.training:
+            ans_span = target_e - target_s
+            v, idx = torch.max(ans_span, dim=0)
+            max_len = int(max(self.opt['max_len'], v))
+        else:
+            max_len = int(min(self.opt['max_len'], doc_len))
+
         # generate ctx and ans batch
         l_ctx_batch = []
         r_ctx_batch = []
@@ -270,12 +277,12 @@ class FOFEReader(nn.Module):
         mask_batch = []
         starts = []
         ends = []
-        length = doc_emb.size(-1)
+        doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
-        for i in range(self.opt['max_len']):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-i])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:length+1])
-            ans_batch.append(forward_fofe[:, :, i, 1+i:length+1])
+        for i in range(max_len):
+            l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
+            r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:doc_len+1])
+            ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
         
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
@@ -291,15 +298,14 @@ class FOFEReader(nn.Module):
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
 
         if self.training:
-            ans_span = target_e - target_s
             can_scores = dq_input.new_zeros(dq_input.size(0), 1, dq_input.size(-1))
             negative_num = int(self.opt['sample_num']*self.opt['neg_ratio'])
             positive_num = int(self.opt['sample_num'] - negative_num)
             sample_dq_batch = []
             sample_score_batch = []
-            for i in range(ctx_ans.size(0)):
+            for i in range(batchsize):
                 ans_len = ans_span[i].item()
-                ans_base = int((doc_emb.size(-1)*2 +1 - ans_len) / 2 * ans_len)
+                ans_base = int((doc_len*2 + 1 - ans_len) / 2 * ans_len)
                 ans_idx = int(ans_base + target_s[i].item())
                 can_scores[i,:,ans_idx].fill_(1)
                 neg_samples_population = list(range(0, ans_idx)) + list(range(ans_idx+1, dq_input.size(-1)))
@@ -314,8 +320,8 @@ class FOFEReader(nn.Module):
         else:
             for i in range(self.opt['max_len']):
                 mask_batch.append(doc_mask[:, i:])
-                starts.append(torch.arange(0, length-i, device=doc_emb.device))
-                ends.append(torch.arange(i, length, device=doc_emb.device))
+                starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
+                ends.append(torch.arange(i, doc_len, device=doc_emb.device))
             
             mask_batch = torch.cat(mask_batch, dim=-1)
             starts = torch.cat(starts, dim=0).long()
