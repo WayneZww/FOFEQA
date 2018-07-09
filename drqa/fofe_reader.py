@@ -226,6 +226,7 @@ class FOFEReader(nn.Module):
         rand_r_ctx = []
         rand_length, rand_position = self.gen_random(doc_emb.size(-1))   
         negtive_num = self.opt['sample_num']*self.opt['neg_ratio']   
+        import pdb; pdb.set_trace()
         for i in range(rand_length.size(0)):
             rand_ans_length = rand_length[i].item()
             rand_l_position = doc_emb.new_tensor(rand_position[i], dtype=torch.long)
@@ -275,14 +276,10 @@ class FOFEReader(nn.Module):
             l_ctx_batch.append(forward_fofe[:, :, -1, 0:length-i])
             r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:length+1])
             ans_batch.append(forward_fofe[:, :, i, 1+i:length+1])
-            mask_batch.append(doc_mask[:, i:])
-            starts.append(torch.arange(0, length-i, device=doc_emb.device))
-            ends.append(torch.arange(i, length, device=doc_emb.device))
         
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
-        mask_batch = torch.cat(mask_batch, dim=-1)
         ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
 
         # generate query batch
@@ -290,13 +287,41 @@ class FOFEReader(nn.Module):
         query_batch = []
         for i in range(ctx_ans.size(-1)):
             query_batch.append(query_fofe)
-        query_batch = torch.cat(query_batch, dim=-1)
-        
+        query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        starts = torch.cat(starts, dim=0).long()
-        ends = torch.cat(ends, dim=0).long()
 
-        return dq_input, starts, ends, mask_batch
+        if self.training:
+            ans_span = target_e - target_s
+            can_scores = dq_input.new_zeros(dq_input.size(0), 1, dq_input.size(-1))
+            negative_num = int(self.opt['sample_num']*self.opt['neg_ratio'])
+            positive_num = int(self.opt['sample_num'] - negative_num)
+            sample_dq_batch = []
+            sample_score_batch = []
+            for i in range(ctx_ans.size(0)):
+                ans_len = ans_span[i].item()
+                ans_base = int((doc_emb.size(-1)*2 +1 - ans_len) / 2 * ans_len)
+                ans_idx = int(ans_base + target_s[i].item())
+                can_scores[i,:,ans_idx].fill_(1)
+                neg_samples_population = list(range(0, ans_idx)) + list(range(ans_idx+1, dq_input.size(-1)))
+                _currbatch_samples_idx = ([ans_idx] * positive_num) + (random.sample(neg_samples_population, negative_num))
+                random.shuffle(_currbatch_samples_idx)
+                currbatch_samples_idx = dq_input.new_tensor(_currbatch_samples_idx, dtype=torch.long)
+                sample_dq_batch.append(torch.index_select(dq_input[i], dim=-1, index=currbatch_samples_idx).unsqueeze(0))
+                sample_score_batch.append(torch.index_select(can_scores[i], dim=-1, index=currbatch_samples_idx).unsqueeze(0))
+            sample_dq_batch = torch.cat(sample_dq_batch, dim=0)
+            sample_score_batch = torch.cat(sample_score_batch, dim=0)
+            return sample_dq_batch, sample_score_batch
+        else:
+            for i in range(self.opt['max_len']):
+                mask_batch.append(doc_mask[:, i:])
+                starts.append(torch.arange(0, length-i, device=doc_emb.device))
+                ends.append(torch.arange(i, length, device=doc_emb.device))
+            
+            mask_batch = torch.cat(mask_batch, dim=-1)
+            starts = torch.cat(starts, dim=0).long()
+            ends = torch.cat(ends, dim=0).long()
+
+            return dq_input, starts, ends, mask_batch
 
     def rank_select(self, scores, starts, ends):
         batchsize = scores.size(0)
@@ -346,7 +371,7 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training :
             #--------------------------------------------------------------------------------            
-            dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
+            dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
             loss = F.mse_loss(score, target_score, size_average=False)
