@@ -262,6 +262,8 @@ class FOFEReader(nn.Module):
     def scan_all(self, doc_emb, query_emb, doc_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
+        doc_len = doc_emb.size(-1)
+        batchsize = doc_emb.size(0)
 
         if self.training:
             ans_span = target_e - target_s
@@ -277,8 +279,6 @@ class FOFEReader(nn.Module):
         mask_batch = []
         starts = []
         ends = []
-        doc_len = doc_emb.size(-1)
-        batchsize = doc_emb.size(0)
         for i in range(max_len):
             l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
             r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:doc_len+1])
