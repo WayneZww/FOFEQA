@@ -53,12 +53,12 @@ class FOFEReader(nn.Module):
             n_ctx_types += 2
         if (self.opt['contexts_excl_cand']):
             n_ctx_types += 2
-        self.fofe_tricontext_encoder = fofe_linear_tricontext(doc_input_size,
+        """self.fofe_tricontext_encoder = fofe_linear_tricontext(doc_input_size,
                                                               opt['fofe_alpha'],
                                                               cand_len_limit=self.opt['max_len'],
                                                               doc_len_limit=809,
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
-                                                              has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])
+                                                              has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
         self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'])
         """
         self.fnn = nn.Sequential(
