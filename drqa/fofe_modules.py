@@ -324,7 +324,7 @@ class fofe_flex(nn.Module):
         
     def forward(self, x):
         length = x.size(-2)
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         matrix = torch.pow(self.alpha,torch.linspace(length-1,0,length).cuda()).unsqueeze(0)
         fofe_code = matrix.matmul(x).squeeze(-2)
         return fofe_code
