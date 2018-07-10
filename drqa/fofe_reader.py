@@ -74,11 +74,17 @@ class FOFEReader(nn.Module):
             nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
+            nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
-            nn.Sigmoid()
+            #nn.Sigmoid()
         )
         self.count=0
     
@@ -302,7 +308,7 @@ class FOFEReader(nn.Module):
                         for k in range(i+1):
                             can_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(ans_len + k + 1)
                             can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(ans_len + k + 1)
-                import pdb; pdb.set_trace()
+                #import pdb; pdb.set_trace()
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
             else:
                 mask_batch.append(doc_mask[:, i:])
@@ -321,9 +327,9 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         if self.training:
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
             target_score = torch.cat(score_batch, dim=-1)
             return dq_input, target_score
         else:
