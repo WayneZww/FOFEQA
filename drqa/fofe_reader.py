@@ -271,9 +271,11 @@ class FOFEReader(nn.Module):
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
             max_len = int(max(self.opt['max_len'], v+1))
+            score_batch = []
+            can_score = doc_emb.new_zeros((batchsize, 1, max_len, doc_len+1))
         else:
             max_len = int(min(self.opt['max_len'], doc_len))
-
+        import pdb; pdb.set_trace()
         # generate ctx and ans batch
         l_ctx_batch = []
         r_ctx_batch = []
@@ -285,7 +287,27 @@ class FOFEReader(nn.Module):
             l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
             r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:doc_len+1])
             ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
-        
+            if self.training:
+                for j in range(batchsize):
+                    ans_e = target_e[j].item()+1
+                    ans_s = target_s[j].item()+1
+                    ans_len = ans_span[j].item()+1
+                    if ans_len <= i+1:
+                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/i+1)
+                        for k in range(ans_len):
+                            can_score[j, :, i, ans_e-k-1].fill_((ans_len - k - 1)/(i + k + 1))
+                            can_score[j, :, i, ans_s+i+k+1].fill_((ans_len - k - 1)/(i + k + 1))
+                    else:
+                        can_score[j, :, i, ans_s+i:ans_e+1].fill_(i+1/ans_len)
+                        for k in range(i):
+                            can_score[j, :, i, ans_s+i-k-1] = (i - k - 1)/(ans_len + k + 1)
+                            can_score[j, :, i, ans_e+k+1] = (i - k - 1)/(ans_len + k + 1)
+                score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
+            else:
+                mask_batch.append(doc_mask[:, i:])
+                starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
+                ends.append(torch.arange(i, doc_len, device=doc_emb.device))
+
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
@@ -298,25 +320,14 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         if self.training:
-            can_scores = dq_input.new_zeros(dq_input.size(0), 1, dq_input.size(-1))
-            ans_base = torch.mul(ans_span, -1).add(doc_len*2 + 1).div(2).mul(ans_span).long()
-            ans_idx = ans_base + target_s
-            for i in range(ans_idx.size(0)):
-                can_scores[i,:,ans_idx[i].item()].fill_(1)
-            return dq_input, can_scores
-            #return dq_input, ans_idx
+            target_score = torch.cat(score_batch, dim=-1)
+            return dq_input, target_score
         else:
-            for i in range(self.opt['max_len']):
-                mask_batch.append(doc_mask[:, i:])
-                starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
-                ends.append(torch.arange(i, doc_len, device=doc_emb.device))
-            
             mask_batch = torch.cat(mask_batch, dim=-1)
             starts = torch.cat(starts, dim=0).long()
             ends = torch.cat(ends, dim=0).long()
-
             return dq_input, starts, ends, mask_batch
 
     def rank_select(self, scores, starts, ends):
