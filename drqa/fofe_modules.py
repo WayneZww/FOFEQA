@@ -340,8 +340,8 @@ class fofe_flex_filter(nn.Module):
         self.inverse = inverse
 
     def forward(self, x):
-        if self.alpha == 1 or self.alpha == 0 :
-            return x
+        #if self.alpha == 1 or self.alpha == 0 :
+        #    self.alpha = 0.9
         fofe_kernel = x.new_zeros(x.size(1), 1, self.length)
         if self.inverse:
             fofe_kernel[:,:,]=torch.pow(self.alpha, torch.range(0, self.length-1).cuda())
