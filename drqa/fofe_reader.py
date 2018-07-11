@@ -6,7 +6,7 @@ import random
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe, fofe_block, fofe_res_block, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_conv1d, fofe_dual, fofe_block, fofe_res_block, fofe_encoder, fofe_linear_tricontext
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
 
@@ -59,7 +59,7 @@ class FOFEReader(nn.Module):
                                                               doc_len_limit=809,
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
-        self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'])
+        self.fofe_linear = fofe_dual(opt['embedding_dim'], opt['fofe_alpha'])
         """
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
@@ -71,13 +71,7 @@ class FOFEReader(nn.Module):
         )
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),

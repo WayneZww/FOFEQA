@@ -68,14 +68,51 @@ class fofe_filter(nn.Module):
         return x
 
 
+class fofe_dual_filter(nn.Module):
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_dual_filter, self).__init__()
+        self.length = length
+        self.channels = inplanes
+        self.alpha = alpha
+        self.fofe_kernel_s = Parameter(torch.Tensor(inplanes,1,length))
+        self.fofe_kernel_s.requires_grad_(False)
+        self.fofe_kernel_l = Parameter(torch.Tensor(inplanes,1,length))
+        self.fofe_kernel_l.requires_grad_(False)
+        self._init_kernel(alpha, length, inverse)
+        #self.padding = (length - 1)//2
+        self.inverse = inverse
+
+    def _init_kernel(self, alpha, length, inverse):
+        if not inverse :
+            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha, torch.linspace(length-1, 0, length)))
+            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha-0.4, torch.linspace(length-1, 0, length)))
+        else :
+            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha, torch.range(0, length-1)))
+            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha-0.4, torch.range(0, length-1)))
+    
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0 :
+            return x
+        if self.inverse:
+            x = F.pad(x,(0, self.length))
+        else :
+            x = F.pad(x,(self.length, 0))
+        short_fofe = F.conv1d(x, self.fofe_kernel_s, bias=None, stride=1, 
+                        padding=0, groups=self.channels)
+        long_fofe = F.conv1d(x, self.fofe_kernel_l, bias=None, stride=1, 
+                        padding=0, groups=self.channels)
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
+        return fofe_code
+
+
 class fofe_encoder(nn.Module):
     def __init__(self, emb_dim, fofe_alpha, fofe_max_length):
         super(fofe_encoder, self).__init__()
         self.forward_filter = []
         self.inverse_filter = []
         for i in range(fofe_max_length):
-            self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1))
-            self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+            self.forward_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
@@ -315,6 +352,21 @@ class fofe(nn.Module):
         fofe_code = torch.bmm(matrix,x).squeeze(-2)
         return fofe_code
 
+class fofe_dual(nn.Module):
+    def __init__(self, channels, alpha): 
+        super(fofe_dual, self).__init__()
+        self.alpha = alpha
+        
+    def forward(self, x):
+        length = x.size(-2)
+        matrix_s = x.new_empty(x.size(0),1,length)
+        matrix_s[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        matrix_l = x.new_empty(x.size(0),1,length)
+        matrix_l[:,].copy_(torch.pow(self.alpha-0.4,torch.linspace(length-1,0,length)))
+        short_fofe = torch.bmm(matrix_s,x).squeeze(-2)
+        long_fofe = torch.bmm(matrix_l,x).squeeze(-2)
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=-1)
+        return fofe_code
 
 class Simility(nn.Module):
     def __init__(self, planes):
