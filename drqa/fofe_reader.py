@@ -298,14 +298,16 @@ class FOFEReader(nn.Module):
                     ans_len = ans_span[j].item()+1
                     if ans_len == i+1:
                         can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(i+1))
-                        #for k in range(ans_len):
-                        #    can_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(i + k + 1))
-                        #    can_score[j, :, i, min(ans_s+i+k+1, doc_len)].fill_((ans_len - k - 1)/(i + k + 1))
-                    #else:
-                        #can_score[j, :, i, ans_s+i:ans_e+1].fill_((i+1)/ans_len)
-                        #for k in range(i+1):
-                        #    can_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(ans_len + k + 1)
-                        #    can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(ans_len + k + 1)
+                    elif ans_len < i+1:
+                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(2*(i+1)))
+                        for k in range(ans_len):
+                            can_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(2*(i + k + 1)))
+                            can_score[j, :, i, min(ans_s+i+k+1, doc_len)].fill_((ans_len - k - 1)/(2*(i + k + 1)))
+                    else:
+                        can_score[j, :, i, ans_s+i:ans_e+1].fill_((i+1)/(2*ans_len))
+                        for k in range(i+1):
+                            can_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(2*(ans_len + k + 1))
+                            can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(2*(ans_len + k + 1))
                 #import pdb; pdb.set_trace()
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
             else:

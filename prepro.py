@@ -221,7 +221,6 @@ def index_answer(row):
     except ValueError:
         return row[:-2] + (None, None)
 # ---------------------------------------------------------------------------------
->>>>>>> test
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):
