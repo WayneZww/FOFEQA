@@ -80,7 +80,7 @@ class FOFEReader(nn.Module):
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
             #nn.Sigmoid()
         )
-        self.count=0
+        self.neg_ratio=torch.Tensor([0.2, 0.8]).cuda()
     
     #--------------------------------------------------------------------------------
 
@@ -384,7 +384,7 @@ class FOFEReader(nn.Module):
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
             score = F.log_softmax(score, dim=1)
-            loss = F.nll_loss(score, target_score)
+            loss = F.nll_loss(score, target_score, weight=self.neg_ratio)
             #loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
