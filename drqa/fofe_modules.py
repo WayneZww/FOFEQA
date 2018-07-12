@@ -428,7 +428,7 @@ class fofe_flex_dual_filter(nn.Module):
                         padding=0, groups=self.channels)
         fofe_h = F.conv1d(x, fofe_kernel_h, bias=None, stride=1, 
                         padding=0, groups=self.channels)
-        fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
+        fofe_code = torch.cat([fofe_l, fofe_h], dim=1)
 
         return fofe_code
 

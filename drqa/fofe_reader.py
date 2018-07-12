@@ -369,8 +369,8 @@ class FOFEReader(nn.Module):
             doc_input_list.append(doc_ner)
         doc_input = torch.cat(doc_input_list, 2)
 
-        return doc_emb, query_emb
-        #return doc_input, query_emb
+        #return doc_emb, query_emb
+        return doc_input, query_emb
         
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask, target_s=None, target_e=None):
         """Inputs:
