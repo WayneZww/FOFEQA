@@ -397,6 +397,7 @@ class FOFEReader(nn.Module):
             #--------------------------------------------------------------------------------
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
             scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
             scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
             s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
            
