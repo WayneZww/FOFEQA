@@ -324,7 +324,7 @@ class FOFEReader(nn.Module):
         #import pdb; pdb.set_trace()
         if self.training:
             #import pdb; pdb.set_trace()
-            target_score = torch.cat(score_batch, dim=-1).long()
+            target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
             return dq_input, target_score
         else:
             mask_batch = torch.cat(mask_batch, dim=-1)
@@ -396,9 +396,9 @@ class FOFEReader(nn.Module):
             # return predict_s, predict_e
             #--------------------------------------------------------------------------------
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
-            scores = self.fnn(dq_input).squeeze(1)
-            scores.data.masked_fill_(d_mask.data, -float('inf'))
-            s_idxs, e_idxs = self.rank_select(scores, starts, ends)
+            scores = self.fnn(dq_input)
+            scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+            s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
            
             return s_idxs, e_idxs 
           
