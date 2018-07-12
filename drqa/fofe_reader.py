@@ -77,7 +77,7 @@ class FOFEReader(nn.Module):
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
+            nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
             #nn.Sigmoid()
         )
         self.count=0
@@ -324,7 +324,7 @@ class FOFEReader(nn.Module):
         #import pdb; pdb.set_trace()
         if self.training:
             #import pdb; pdb.set_trace()
-            target_score = torch.cat(score_batch, dim=-1)
+            target_score = torch.cat(score_batch, dim=-1).long()
             return dq_input, target_score
         else:
             mask_batch = torch.cat(mask_batch, dim=-1)
@@ -383,9 +383,9 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
-            #score = F.log_softmax(score, dim=-1).squeeze(1)
-            #loss = F.nll_loss(score, target_score)
-            loss = F.mse_loss(score, target_score, size_average=False)
+            score = F.log_softmax(score, dim=1)
+            loss = F.nll_loss(score, target_score)
+            #loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
             # import pdb;pdb.set_trace()
