@@ -147,6 +147,8 @@ class fofe_linear_tricontext(nn.Module):
         super(fofe_linear_tricontext, self).__init__()
         self.alpha = alpha
         self.cand_len_limit = cand_len_limit
+        self.has_lr_ctx_cand_incl = has_lr_ctx_cand_incl
+        self.has_lr_ctx_cand_excl = has_lr_ctx_cand_excl
         
         #Construct Base FOFE Buffer for full doc length
         self.doc_len_limit = doc_len_limit
@@ -154,6 +156,24 @@ class fofe_linear_tricontext(nn.Module):
         for i in range(1, self.doc_len_limit+1):
             powers = torch.linspace(i-1,i-self.doc_len_limit,self.doc_len_limit).abs()
             self._full_base_block_alpha[i-1,:].copy_(torch.pow(self.alpha,powers))
+
+    @staticmethod
+    def get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx=0):
+        '''
+            sample_start_idx = starting index of target sample within the doc.
+            sample_span = length of target sample.
+            doc_len = length of doc that target sample was in.
+            max_cand_len = a predefine max candidate length that fofe_tricontext was build for.
+        '''
+        
+        if (sample_start_idx < doc_len - max_cand_len):
+            sample_base_idx = sample_start_idx * max_cand_len
+        else:
+            rev_sample_start_idx = doc_len - sample_start_idx - 1
+            base_idx_of_sample_base_idx = (doc_len - max_cand_len) * max_cand_len
+            sample_base_idx = base_idx_of_sample_base_idx + tri_num(max_cand_len) - tri_num(rev_sample_start_idx+1)
+        sample_idx = currbatch_base_idx + sample_base_idx + sample_span
+        return sample_idx
 
     def get_contexts_alpha_buffers(self, x_input):
         '''
@@ -249,19 +269,19 @@ class fofe_linear_tricontext(nn.Module):
         if ( not self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
             batchwise_fofe_codes = _batchwise_fofe_codes[0]
         elif ( not self.has_lr_ctx_cand_incl ) and ( self.has_lr_ctx_cand_excl ):
-            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
-                                              _batchwise_fofe_codes[1],
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[1],
+                                              _batchwise_fofe_codes[0],
                                               _batchwise_fofe_codes[3]], dim=-1)
         elif ( self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
-            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
-                                              _batchwise_fofe_codes[2],
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[2],
+                                              _batchwise_fofe_codes[1],
                                               _batchwise_fofe_codes[4]], dim=-1)
         else:
-            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[0],
-                                              _batchwise_fofe_codes[1],
-                                              _batchwise_fofe_codes[3],
+            batchwise_fofe_codes = torch.cat([_batchwise_fofe_codes[1],
                                               _batchwise_fofe_codes[2],
-                                              _batchwise_fofe_codes[4]], dim=-1)
+                                              _batchwise_fofe_codes[0],
+                                              _batchwise_fofe_codes[4],
+                                              _batchwise_fofe_codes[3]], dim=-1)
         batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
         return batchwise_fofe_codes, batchwise_cands_pos
 

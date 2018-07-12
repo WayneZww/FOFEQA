@@ -72,10 +72,8 @@ class FOFEReader(nn.Module):
         """
         self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
             nn.Sigmoid()
@@ -113,12 +111,14 @@ class FOFEReader(nn.Module):
             predict_e.append(_predict_e)
         return predict_s, predict_e
 
+
+
     def sample_via_fofe_tricontext(self, doc_emb, query_emb, target_s=None, target_e=None):
         # TODO @SED [PRIORITY 1]: FIX PADDING / BATCHSIZE>1 ISSUE in DOC_FOFE.
         # TODO @SED [PRIORITY 2]: FIX PADDING / BATCHSIZE>1 ISSUE in QUERY_FOFE.
         _doc_fofe, _cands_ans_pos = self.fofe_tricontext_encoder(doc_emb)
         _query_fofe = self.fofe_linear(query_emb)
-        import pdb;pdb.set_trace()
+
         batch_size = _query_fofe.size(0)
         query_embedding_dim = _query_fofe.size(-1)
         doc_embedding_dim = _doc_fofe.size(-1)
@@ -132,11 +132,23 @@ class FOFEReader(nn.Module):
         
         if self.training:
             assert (target_s is not None) and (target_e is not None), "This is supervise learning, must have target during training"
-            # 2. & 3.
             target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
             _samples_idx = []
-            n_neg_samples = round(self.opt['sample_num'] * self.opt['neg_ratio'])
-            n_pos_samples = self.opt['sample_num'] - n_neg_samples
+            
+            # TODO @ SED: make it work for case if (self.opt['sample_num'] == 0 and self.opt['neg_ratio'] > 0)
+            # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
+            if self.opt['sample_num'] > 0:
+                sample_num = self.opt['sample_num']
+            else:
+                sample_num = n_cands_ans
+            
+            if self.opt['neg_ratio'] > 0:
+                n_neg_samples = round(sample_num * self.opt['neg_ratio'])
+                n_pos_samples = sample_num - n_neg_samples
+            else:
+                n_pos_samples = 1
+                n_neg_samples = sample_num - n_pos_samples
+
             for i in range(target_s.size(0)):
                 # 2. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
@@ -147,32 +159,27 @@ class FOFEReader(nn.Module):
                 
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
-                def get_sample_index(ans_s, ans_span, doc_len, max_cand_len):
-                    if (ans_s < doc_len - max_cand_len):
-                        ans_base_idx = ans_s * max_cand_len
-                    else:
-                        rev_ans_s = doc_len - ans_s - 1
-                        base_idx_of_ans_base_idx = (doc_len - max_cand_len) * max_cand_len
-                        ans_base_idx = base_idx_of_ans_base_idx + tri_num(max_cand_len) - tri_num(rev_ans_s+1)
-                    ans_idx = currbatch_base_idx + ans_base_idx + ans_span
-                    return ans_idx
-                ans_idx = get_sample_index(ans_s, ans_span, doc_len, max_cand_len)
+                ans_idx = self.fofe_tricontext_encoder.get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
                 target_score[ans_idx] = 1
                 
                 # 3. Sampling
                 #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
                 #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
-                neg_samples_population = list(range(currbatch_base_idx, ans_idx)) + list(range(ans_idx+1, nextbatch_base_idx))
-                n_neg_samples_quot, n_neg_samples_mod = divmod(n_neg_samples, len(neg_samples_population))
-                currbatch_samples_idx = ([ans_idx] * n_pos_samples) + \
-                                        (random.sample(neg_samples_population, n_neg_samples_mod)) + \
-                                        (neg_samples_population * n_neg_samples_quot)
+                if n_pos_samples == 1 and sample_num == n_cands_ans:
+                    currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
+                else:
+                    neg_samples_population = list(range(currbatch_base_idx, ans_idx)) + list(range(ans_idx+1, nextbatch_base_idx))
+                    n_neg_samples_quot, n_neg_samples_mod = divmod(n_neg_samples, len(neg_samples_population))
+                    currbatch_samples_idx = ([ans_idx] * n_pos_samples) + \
+                                            (random.sample(neg_samples_population, n_neg_samples_mod)) + \
+                                            (neg_samples_population * n_neg_samples_quot)
                 random.shuffle(currbatch_samples_idx)
                 _samples_idx += currbatch_samples_idx
+
             samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
-            samples_dq_input = dq_input.new_empty(batch_size * self.opt['sample_num'], query_embedding_dim+doc_embedding_dim)
+            samples_dq_input = dq_input.new_empty(batch_size * sample_num, query_embedding_dim+doc_embedding_dim)
             samples_dq_input.copy_(dq_input.index_select(0, samples_idx))
-            samples_target_score = target_score.new_empty(batch_size * self.opt['sample_num'], 1)
+            samples_target_score = target_score.new_empty(batch_size * sample_num, 1)
             samples_target_score.copy_(target_score.index_select(0, samples_idx))
 
             #import pdb;pdb.set_trace()
@@ -342,14 +349,14 @@ class FOFEReader(nn.Module):
             #--------------------------------------------------------------------------------            
             #dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
             dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            score = self.fnn(dq_input)
-            loss = F.mse_loss(score, target_score, size_average=False)
+            score = self.fnn(dq_input.transpose(-1,-2).unsqueeze(0))
+            loss = F.mse_loss(score, target_score.transpose(-1,-2).unsqueeze(0), size_average=False)
             return loss
         else :
             #--------------------------------------------------------------------------------
             dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
-            score = self.fnn(dq_input)
-            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
+            score = self.fnn(dq_input.transpose(-1,-2).unsqueeze(0))
+            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score.squeeze(0).squeeze(0))
             return predict_s, predict_e
             #--------------------------------------------------------------------------------
             

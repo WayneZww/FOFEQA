@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA"
-work_dir="$HOME/CSE/FOFE_QA/FOFEQA"
+#work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA_SED"
+work_dir="$HOME/CSE/FOFE_QA/FOFEQA_SED"
 now=$(date +"%Y%b%d_%Hh%Mm%Ss")
 data_root="$work_dir/data/"
 ver_n_opt="v2_opt2"
 
 batch_size=1
-sample_num=8
+sample_num=512
 neg_ratio=0.875
 max_cand_len=16
 fofe_alpha=0.8

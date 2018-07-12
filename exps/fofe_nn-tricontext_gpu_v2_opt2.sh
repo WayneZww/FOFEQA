@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA"
+work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA_SED"
 now=$(date +"%Y%b%d_%Hh%Mm%Ss")
 data_root="$work_dir/data/"
 ver_n_opt="v2_opt2"
