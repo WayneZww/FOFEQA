@@ -116,8 +116,8 @@ class fofe_encoder(nn.Module):
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
-
-    def forward(self, x):
+    
+    def fofe(self, x):
         forward_fofe = []
         inverse_fofe = []
         for forward_filter in self.forward_filter:
@@ -127,9 +127,13 @@ class fofe_encoder(nn.Module):
 
         forward_fofe = torch.cat(forward_fofe, dim=-2)
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)
-
+        
         return forward_fofe, inverse_fofe
 
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
+        return forward_fofe, inverse_fofe
+        
 
 class fofe_block(nn.Module):
     def __init__(self, inplanes, planes, fofe_alpha=0.8, fofe_length=3, dilation=3, fofe_inverse=False):
@@ -370,7 +374,7 @@ class fofe_dual(nn.Module):
 
 
 class fofe_flex(nn.Module):
-    def __init__(self, channels, alpha): 
+    def __init__(self, inplanes, alpha): 
         super(fofe_flex, self).__init__()
         self.alpha = Parameter(torch.ones(1)*alpha)
         self.alpha.requires_grad_(True)
@@ -382,10 +386,14 @@ class fofe_flex(nn.Module):
         fofe_code = matrix.matmul(x).squeeze(-2)
         return fofe_code
 
+    def extra_repr(self):
+        return 'inplanes={inplanes}'.format(**self.__dict__)
+
 
 class fofe_flex_dual(nn.Module):
-    def __init__(self, channels, alpha_l, alpha_h): 
+    def __init__(self, inplanes, alpha_l, alpha_h): 
         super(fofe_flex_dual, self).__init__()
+        self.inplanes = inplanes
         self.alpha_l = Parameter(torch.ones(1)*alpha_l)
         self.alpha_h = Parameter(torch.ones(1)*alpha_h)
         self.alpha_l.requires_grad_(True)
@@ -400,6 +408,9 @@ class fofe_flex_dual(nn.Module):
         fofe_h = matrix_h.matmul(x).squeeze(-2)
         fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
         return fofe_code
+
+    def extra_repr(self):
+        return 'inplanes={inplanes}'.format(**self.__dict__)
 
 
 class fofe_flex_dual_filter(nn.Module):
@@ -432,6 +443,10 @@ class fofe_flex_dual_filter(nn.Module):
 
         return fofe_code
 
+    def extra_repr(self):
+        return 'inplanes={channels}, length={length}， ' \
+            'inverse={inverse}'.format(**self.__dict__)
+
 
 class fofe_flex_filter(nn.Module):
     def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
@@ -456,6 +471,62 @@ class fofe_flex_filter(nn.Module):
                         padding=0, groups=self.channels)
 
         return x
+
+    def extra_repr(self):
+        return 'inplanes={inplanes}, length={length}， ' \
+            'inverse={inverse}'.format(**self.__dict__)
+
+
+class fofe_flex_dual_linear_filter(nn.Module):
+    def __init__(self, inplanes, planes, alpha_l=0.4, alpha_h=0.8, length=3, inverse=False):
+        super(fofe_flex_dual_linear_filter, self).__init__()
+        self.fofe = fofe_flex_dual(inplanes, alpha_l, alpha_h)
+        self.conv = nn.Sequential(
+            nn.Conv1d(inplanes, planes, 1, 1, bias=False),
+            nn.BatchNorm1d(planes),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        fofe = self.fofe(x)
+        out = self.conv(fofe)
+        return out
+
+
+class fofe_encoder_conv(fofe_encoder):
+    def __init__(self, inplanes, planes, fofe_alpha_l, fofe_alpha_h, fofe_max_length):
+        super(fofe_encoder_conv, self).__init__(inplanes, fofe_alpha_l, fofe_alpha_h, fofe_max_length)
+        self.forward_conv = nn.Sequential(
+            nn.Conv2d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm2d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+        self.inverse_conv = nn.Sequential(
+            nn.Conv2d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm2d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
+        forward = self.forward_conv(forward_fofe)
+        inverse = self.inverse_conv(inverse_fofe)
+
+        return forward, inverse
+
+
+class fofe_flex_dual_linear(nn.Module):
+    def __init__(self, inplanes, planes, alpha_l=0.4, alpha_h=0.8, length=3, inverse=False):
+        super(fofe_flex_dual_linear, self).__init__()
+        self.fofe = fofe_flex_dual(inplanes, alpha_l, alpha_h)
+        self.conv = nn.Sequential(
+            nn.Conv1d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm1d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        fofe = self.fofe(x)
+        out = self.conv(fofe.unsqueeze(-1))
+        return out
 
 
 class Simility(nn.Module):
