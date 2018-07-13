@@ -78,14 +78,15 @@ class FOFEReader(nn.Module):
             nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
+            nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-            #nn.Sigmoid()
         )
-        self.count=0
-    
+        print(self) 
     #--------------------------------------------------------------------------------
 
     def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):
@@ -297,18 +298,7 @@ class FOFEReader(nn.Module):
                     ans_s = target_s[j].item()+1
                     ans_len = ans_span[j].item()+1
                     if ans_len == i+1:
-                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(i+1))
-                    """elif ans_len < i+1:
-                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(2*(i+1)))
-                        for k in range(ans_len):
-                            can_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(2*(i + k + 1)))
-                            can_score[j, :, i, min(ans_s+i+k+1, doc_len)].fill_((ans_len - k - 1)/(2*(i + k + 1)))
-                    else:
-                        can_score[j, :, i, ans_s+i:ans_e+1].fill_((i+1)/(2*ans_len))
-                        for k in range(i+1):
-                            can_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(2*(ans_len + k + 1))
-                            can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(2*(ans_len + k + 1))"""
-                #import pdb; pdb.set_trace()
+                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(1)
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
             else:
                 mask_batch.append(doc_mask[:, i:])
@@ -371,7 +361,6 @@ class FOFEReader(nn.Module):
             doc_input_list.append(doc_ner)
         doc_input = torch.cat(doc_input_list, 2)
 
-        #return doc_emb, query_emb
         return doc_input, query_emb
         
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask, target_s=None, target_e=None):
@@ -392,7 +381,6 @@ class FOFEReader(nn.Module):
             score = self.fnn(dq_input)
             score = F.log_softmax(score, dim=1)
             loss = F.nll_loss(score, target_score)
-            #loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
 			# import pdb;pdb.set_trace()
