@@ -26,4 +26,4 @@ python -u train_fofe.py --model_dir ${models_n_logs_dir} \
                 --ner False \
                 --contexts_incl_cand False \
                 --contexts_excl_cand True \
-                --optimizer sgd
+                --optimizer adamax

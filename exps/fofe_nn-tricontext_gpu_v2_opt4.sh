@@ -15,6 +15,7 @@ models_n_logs_dir="$work_dir/models_n_logs/${name}"
 
 mkdir -p ${models_n_logs_dir}
 
+CUDA_VISIBLE_DEVICES=${gpu_id} \
 python -u train_fofe.py --model_dir ${models_n_logs_dir} \
                 --tune_partial 1000 \
                 --batch_size ${batch_size} \
@@ -26,4 +27,4 @@ python -u train_fofe.py --model_dir ${models_n_logs_dir} \
                 --ner False \
                 --contexts_incl_cand False \
                 --contexts_excl_cand True \
-                --optimizer sgd
+                --optimizer adamax

@@ -135,20 +135,24 @@ class FOFEReader(nn.Module):
             target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
             _samples_idx = []
             
-            # TODO @ SED: make it work for case if (self.opt['sample_num'] == 0 and self.opt['neg_ratio'] > 0)
             # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
-            if self.opt['sample_num'] > 0:
+            if self.opt['sample_num'] > 0 and self.opt['neg_ratio'] > 0:
                 sample_num = self.opt['sample_num']
-            else:
-                sample_num = n_cands_ans
-            
-            if self.opt['neg_ratio'] > 0:
                 n_neg_samples = round(sample_num * self.opt['neg_ratio'])
                 n_pos_samples = sample_num - n_neg_samples
-            else:
+            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] > 0:
+                n_neg_samples = n_cands_ans - 1
+                n_pos_samples = round(n_neg_samples / self.opt['neg_ratio']) - n_neg_samples
+                sample_num = n_pos_samples + n_neg_samples
+            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] <= 0:
+                sample_num = n_cands_ans
                 n_pos_samples = 1
                 n_neg_samples = sample_num - n_pos_samples
-
+            else:
+                sample_num = self.opt['sample_num']
+                n_pos_samples = 1
+                n_neg_samples = sample_num - n_pos_samples
+            
             for i in range(target_s.size(0)):
                 # 2. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
