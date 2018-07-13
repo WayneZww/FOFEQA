@@ -82,7 +82,7 @@ class FOFEReader(nn.Module):
             #nn.Sigmoid()
         )
         self.neg_ratio=torch.Tensor([0.2, 0.8]).cuda()
-        self.focal_loss = FocalLoss1d(2, gamma=2, alpha=0.25)
+        self.focal_loss = FocalLoss1d(2, gamma=2, alpha=torch.Tensor([0.75, 0.25]).unsqueeze(-1))
     
     #--------------------------------------------------------------------------------
 

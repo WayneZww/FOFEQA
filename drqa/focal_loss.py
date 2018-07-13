@@ -11,7 +11,7 @@ class FocalLoss(nn.Module):
         if alpha is None:
             self.alpha = torch.ones(class_num, 1)
         else:
-            self.alpha = torch.ones(class_num, 1)*alpha
+            self.alpha = alpha
         self.gamma = gamma
         self.class_num = class_num
         self.size_average = size_average
