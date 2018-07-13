@@ -81,7 +81,7 @@ class FOFEReader(nn.Module):
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
+            nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
             #nn.Sigmoid()
         )
         self.count=0
@@ -298,7 +298,7 @@ class FOFEReader(nn.Module):
                     ans_len = ans_span[j].item()+1
                     if ans_len == i+1:
                         can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(i+1))
-                    elif ans_len < i+1:
+                    """elif ans_len < i+1:
                         can_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(2*(i+1)))
                         for k in range(ans_len):
                             can_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(2*(i + k + 1)))
@@ -307,7 +307,7 @@ class FOFEReader(nn.Module):
                         can_score[j, :, i, ans_s+i:ans_e+1].fill_((i+1)/(2*ans_len))
                         for k in range(i+1):
                             can_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(2*(ans_len + k + 1))
-                            can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(2*(ans_len + k + 1))
+                            can_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(2*(ans_len + k + 1))"""
                 #import pdb; pdb.set_trace()
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
             else:
@@ -330,7 +330,7 @@ class FOFEReader(nn.Module):
         #import pdb; pdb.set_trace()
         if self.training:
             #import pdb; pdb.set_trace()
-            target_score = torch.cat(score_batch, dim=-1)
+            target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
             return dq_input, target_score
         else:
             mask_batch = torch.cat(mask_batch, dim=-1)
@@ -390,12 +390,12 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             score = self.fnn(dq_input)
-            #score = F.log_softmax(score, dim=-1).squeeze(1)
-            #loss = F.nll_loss(score, target_score)
-            loss = F.mse_loss(score, target_score, size_average=False)
+            score = F.log_softmax(score, dim=1)
+            loss = F.nll_loss(score, target_score)
+            #loss = F.mse_loss(score, target_score, size_average=False)
             return loss
         else :
-            # import pdb;pdb.set_trace()
+			# import pdb;pdb.set_trace()
             #--------------------------------------------------------------------------------
             #dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
             #score = self.fnn(dq_input)
@@ -403,9 +403,10 @@ class FOFEReader(nn.Module):
             # return predict_s, predict_e
             #--------------------------------------------------------------------------------
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
-            scores = self.fnn(dq_input).squeeze(1)
-            scores.data.masked_fill_(d_mask.data, -float('inf'))
-            s_idxs, e_idxs = self.rank_select(scores, starts, ends)
+            scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
+            scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+            s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
            
             return s_idxs, e_idxs 
           
