@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from .fofe_modules import fofe_conv1d, fofe, fofe_block, fofe_res_block, fofe_encoder, fofe_linear_tricontext
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
+from .focal_loss import FocalLoss1d
 
 
 class FOFEReader(nn.Module):
@@ -81,6 +82,7 @@ class FOFEReader(nn.Module):
             #nn.Sigmoid()
         )
         self.neg_ratio=torch.Tensor([0.2, 0.8]).cuda()
+        self.focal_loss = FocalLoss1d(2, gamma=2, alpha=0.25)
     
     #--------------------------------------------------------------------------------
 
@@ -382,11 +384,12 @@ class FOFEReader(nn.Module):
             #--------------------------------------------------------------------------------            
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            score = self.fnn(dq_input)
-            score = F.log_softmax(score, dim=1)
-            loss = F.nll_loss(score, target_score, weight=self.neg_ratio)
-            #loss = F.mse_loss(score, target_score, size_average=False)
-            return loss
+            scores = self.fnn(dq_input)
+            scores = F.log_softmax(scores, dim=1)
+            fl_loss = self.focal_loss(scores, target_score)
+            #ce_loss = F.nll_loss(scores, target_score, weight=self.neg_ratio)
+            #loss = fl_loss + ce_loss
+            return fl_loss
         else :
             # import pdb;pdb.set_trace()
             #--------------------------------------------------------------------------------
