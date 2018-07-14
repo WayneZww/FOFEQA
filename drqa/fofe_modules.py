@@ -106,13 +106,13 @@ class fofe_dual_filter(nn.Module):
 
 
 class fofe_encoder(nn.Module):
-    def __init__(self, emb_dim, fofe_alpha_l, fofe_alpha_h, fofe_max_length):
+    def __init__(self, emb_dim, fofe_alpha, fofe_max_length):
         super(fofe_encoder, self).__init__()
         self.forward_filter = []
         self.inverse_filter = []
         for i in range(fofe_max_length):
-            self.forward_filter.append(fofe_flex_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1))
-            self.inverse_filter.append(fofe_flex_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1, inverse=True))
+            self.forward_filter.append(fofe_flex_all_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_flex_all_filter(emb_dim, fofe_alpha, i+1, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
@@ -129,23 +129,7 @@ class fofe_encoder(nn.Module):
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)
 
         return forward_fofe, inverse_fofe
-
-
-class fofe_block(nn.Module):
-    def __init__(self, inplanes, planes, fofe_alpha=0.8, fofe_length=3, dilation=3, fofe_inverse=False):
-        super(fofe_block, self).__init__()
-        self,fofe_filter = fofe_filter(inplanes, fofe_alpha, fofe_length, fofe_inverse)
-        self.conv = nn.Sequential(nn.Conv1d(inplanes, planes,3,1,padding=length,
-                        dilation=dilation, groups=1, bias=False),
-                    nn.BatchNorm1d(planes),
-                    nn.LeakyReLU(0.1, inplace=True))
-
-    def forward(self, x): 
-        x = self.fofe_filter(x)
-        x = self.conv(x)
-    
-        return x
-    
+   
 
 class fofe_res_block(nn.Module):
     def __init__(self, inplanes, planes, convs=3, fofe_alpha=0.9, fofe_length=3, fofe_dilation=3, downsample=None, fofe_inverse=False):
@@ -400,6 +384,42 @@ class fofe_flex_dual(nn.Module):
         fofe_h = matrix_h.matmul(x).squeeze(-2)
         fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
         return fofe_code
+
+
+class fofe_flex_all(nn.Module):
+    def __init__(self, channels, alpha): 
+        super(fofe_flex_all, self).__init__()
+        self.channels = channels
+        self.alpha = Parameter(torch.ones(channels, 1)*alpha)
+        self.alpha.requires_grad_(True)
+        
+    def forward(self, x):
+        length = x.size(-2)
+        matrix = torch.pow(self.alpha, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(1)
+        fofe_code = F.conv1d(x.transpose(-1,-2), matrix, bias=None, stride=1, padding=0, groups = self.channels)
+        return fofe_code
+
+
+class fofe_flex_all_filter(nn.Module):
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_flex_all_filter, self).__init__()
+        self.length = length
+        self.channels = inplanes
+        self.alpha = Parameter(torch.ones(inplanes, 1)*alpha)
+        self.alpha.requires_grad_(True)
+        self.inverse = inverse
+
+    def forward(self, x):
+        if self.inverse:
+            fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.range(0, self.length-1))).unsqueeze(1)
+            x = F.pad(x,(0, self.length))
+        else :
+            fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.linspace(self.length-1, 0, self.length))).unsqueeze(1)
+            x = F.pad(x,(self.length, 0))
+        x = F.conv1d(x, fofe_kernel, bias=None, stride=1, 
+                        padding=0, groups=self.channels)
+        
+        return x
 
 
 class fofe_flex_dual_filter(nn.Module):

@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_dual, fofe_dual, fofe_block, fofe_res_block, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_flex_all, fofe_encoder, fofe_linear_tricontext
 
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
@@ -48,7 +48,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha']-0.4, opt['fofe_alpha'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -62,7 +62,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
+        self.fofe_linear = fofe_flex_all(opt['embedding_dim'], opt['fofe_alpha'])
 
         """
         self.fnn = nn.Sequential(
@@ -75,10 +75,7 @@ class FOFEReader(nn.Module):
         )
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(doc_input_size*3+opt['embedding_dim']*1, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
@@ -202,69 +199,6 @@ class FOFEReader(nn.Module):
 
         return rand_length, rand_position
 
-    def sample(self, doc_emb, query_emb, target_s, target_e):
-        doc_emb = doc_emb.transpose(-2,-1)
-        forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
-        
-        # generate positive ans and ctx batch
-        ans_span = target_e - target_s
-        positive_num = int(self.opt['sample_num']*(1-self.opt['neg_ratio']))
-        batchsize = doc_emb.size(0)
-        ans_minibatch = []
-        l_ctx_minibatch = []
-        r_ctx_minibatch = []
-        for j in range(batchsize):
-            ans_minibatch.append(forward_fofe[j, :, ans_span[j].item(), target_e[j].item()+1].unsqueeze(0))
-            l_ctx_minibatch.append(forward_fofe[j, :, -1, target_s[j].item()].unsqueeze(0))
-            r_ctx_minibatch.append(inverse_fofe[j, :, -1, target_e[j].item()+1].unsqueeze(0))
-        ans_minibatch = torch.cat(ans_minibatch, dim=0)
-        l_ctx_minibatch = torch.cat(l_ctx_minibatch, dim=0)
-        r_ctx_minibatch = torch.cat(r_ctx_minibatch, dim=0)
-        positive_ctx_ans_minibatch = torch.cat([l_ctx_minibatch, ans_minibatch, r_ctx_minibatch], dim=-1).unsqueeze(-1)
-        positive_ctx_ans = []
-        for i in range(positive_num):                 
-            positive_ctx_ans.append(positive_ctx_ans_minibatch)
-        positive_ctx_ans = torch.cat(positive_ctx_ans, dim=-1)
-        positive_score = doc_emb.new_ones((positive_ctx_ans.size(0), 1, positive_ctx_ans.size(-1)))
-
-        # generate negative ans and ctx batch
-        rand_ans = []
-        rand_l_ctx = []
-        rand_r_ctx = []
-        rand_length, rand_position = self.gen_random(doc_emb.size(-1))   
-        negtive_num = self.opt['sample_num']*self.opt['neg_ratio']   
-        # import pdb; pdb.set_trace()
-        for i in range(rand_length.size(0)):
-            rand_ans_length = rand_length[i].item()
-            rand_l_position = doc_emb.new_tensor(rand_position[i], dtype=torch.long)
-            rand_ans_position = rand_l_position + 1 + rand_ans_length
-            rand_r_position = rand_l_position + 1 + rand_ans_length
-            rand_ans.append(torch.index_select(forward_fofe[:, :, rand_ans_length, :], dim=-1, index=rand_ans_position))
-            rand_l_ctx.append(torch.index_select(forward_fofe[:, :, -1, :], dim=-1, index=rand_l_position))
-            rand_r_ctx.append(torch.index_select(inverse_fofe[:, :, -1, :], dim=-1, index=rand_r_position))
-        
-        neg_ans = torch.cat(rand_ans, dim=-1)
-        neg_l_ctx = torch.cat(rand_l_ctx, dim=-1)
-        neg_r_ctx = torch.cat(rand_r_ctx, dim=-1)
-        negtive_ctx_ans = torch.cat([neg_l_ctx, neg_ans, neg_r_ctx], dim=1)
-        negtive_score = doc_emb.new_zeros((negtive_ctx_ans.size(0), 1, negtive_ctx_ans.size(-1)))
-        
-        # generate query batch
-        query_fofe = self.fofe_linear(query_emb).unsqueeze(-1)
-        query_batch = []
-        for i in range(self.opt['sample_num']):
-            query_batch.append(query_fofe)
-        query_batch = torch.cat(query_batch, dim=-1)
-        
-        # generate net input and target with shuffle
-        idx = doc_emb.new_tensor(torch.randperm(self.opt['sample_num']), dtype=torch.long)
-        ctx_ans = torch.index_select(torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1), dim=-1, index=idx)
-        target_score =torch.index_select(torch.cat([positive_score, negtive_score], dim=-1), dim=-1, index=idx)
-        #ctx_ans = torch.cat([positive_ctx_ans, negtive_ctx_ans], dim=-1)
-        #target_score = torch.cat([positive_score, negtive_score], dim=-1)
-        dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        
-        return dq_input, target_score
     
     def scan_all(self, doc_emb, query_emb, doc_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
@@ -311,15 +245,14 @@ class FOFEReader(nn.Module):
         ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
 
         # generate query batch
-        query_fofe = self.fofe_linear(query_emb).unsqueeze(-1)
+        query_fofe = self.fofe_linear(query_emb)
         query_batch = []
         for i in range(ctx_ans.size(-1)):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)   
         dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        #import pdb; pdb.set_trace()
+
         if self.training:
-            #import pdb; pdb.set_trace()
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
             return dq_input, target_score
         else:
