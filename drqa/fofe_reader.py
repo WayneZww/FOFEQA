@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_all, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_flex_all_conv as fofe_flex_all, fofe_encoder_conv as fofe_encoder, fofe_linear_tricontext
 
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
@@ -48,7 +48,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['hidden_size'], opt['fofe_alpha'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -62,7 +62,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_all(opt['embedding_dim'], opt['fofe_alpha'])
+        self.fofe_linear = fofe_flex_all(opt['embedding_dim'], opt['hidden_size'], opt['fofe_alpha'])
 
         """
         self.fnn = nn.Sequential(
@@ -75,7 +75,10 @@ class FOFEReader(nn.Module):
         )
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*3+opt['embedding_dim']*1, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),

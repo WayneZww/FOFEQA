@@ -117,7 +117,7 @@ class fofe_encoder(nn.Module):
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
 
-    def forward(self, x):
+    def fofe(self, x):
         forward_fofe = []
         inverse_fofe = []
         for forward_filter in self.forward_filter:
@@ -128,6 +128,10 @@ class fofe_encoder(nn.Module):
         forward_fofe = torch.cat(forward_fofe, dim=-2)
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)
 
+        return forward_fofe, inverse_fofe
+
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
         return forward_fofe, inverse_fofe
    
 
@@ -398,6 +402,44 @@ class fofe_flex_all(nn.Module):
         matrix = torch.pow(self.alpha, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(1)
         fofe_code = F.conv1d(x.transpose(-1,-2), matrix, bias=None, stride=1, padding=0, groups = self.channels)
         return fofe_code
+
+
+class fofe_flex_all_conv(nn.Module):
+    def __init__(self, inplanes, planes, alpha): 
+        super(fofe_flex_all_conv, self).__init__()
+        self.fofe = fofe_flex_all(inplanes, alpha)
+        self.conv = nn.Sequential(
+            nn.Conv1d(inplanes, planes, 1, 1, bias=False),
+            nn.BatchNorm1d(planes),
+            nn.ReLU(inplace=True)
+        )
+        
+    def forward(self, x):
+        fofe_code = self.fofe(x)
+        out = self.conv(fofe_code)
+        return out
+
+
+class fofe_encoder_conv(fofe_encoder):
+    def __init__(self, inplanes, planes, fofe_alpha, fofe_max_length):
+        super(fofe_encoder_conv, self).__init__(inplanes, fofe_alpha, fofe_max_length)
+        self.forward_conv = nn.Sequential(
+            nn.Conv2d(inplanes, planes, 1, 1, bias=False),
+            nn.BatchNorm2d(planes),
+            nn.ReLU(inplace=True)
+        )
+        self.inverse_conv = nn.Sequential(
+            nn.Conv2d(inplanes, planes, 1, 1, bias=False),
+            nn.BatchNorm2d(planes),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
+        forward = self.forward_conv(forward_fofe)
+        inverse = self.inverse_conv(inverse_fofe)
+
+        return forward, inverse
 
 
 class fofe_flex_all_filter(nn.Module):
