@@ -226,8 +226,8 @@ class FOFEReader(nn.Module):
         starts = []
         ends = []
         for i in range(max_len):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, i+1:doc_len+1])
+            l_ctx_batch.append(forward_fofe[:, :, -1, 1+i:doc_len+1])
+            r_ctx_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
             ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
             if self.training:
                 for j in range(batchsize):
