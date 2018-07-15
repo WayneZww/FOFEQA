@@ -2,7 +2,48 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .fofe_modules import Attention, fofe_res_block
-        
+
+
+class BottleNeck(nn.Module):
+    def __init__(self, inplanes, planes):
+        super(BottleNeck, self).__init__()
+        self.downsample=None
+        if inplanes != planes:
+            self.downsample = nn.Sequential(
+                nn.Conv1d(inplanes, planes, 1, 1, bias=False),
+                nn.BatchNorm1d(planes),
+            )
+        self.conv1 = nn.Conv1d(inplanes, inplanes//4, 1, 1, bias=False)
+        self.bn1 = nn.BatchNorm1d(inplanes//4)
+        self.conv2 = nn.Conv1d(inplanes//4, inplanes//4, 1, 1, bias=False)
+        self.bn2 = nn.BatchNorm1d(inplanes//4)
+        self.conv3 = nn.Conv1d(inplanes//4, planes, 1, 1, bias=False)
+        self.bn3 = nn.BatchNorm1d(planes)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out   
+
+
 class FOFENet(nn.Module):
     def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
             fofe_alpha=0.8, fofe_max_length=3, stride=1, moduleList=False):
@@ -96,70 +137,22 @@ class FOFE_NN(nn.Module):
             m.weight.data.fill_(1.)
             m.bias.data.fill_(1e-4)
         
-    def __init__(self, emb_dims, fofe_alpha, fofe_max_length, training=True):
+    def __init__(self, hidden_size):
         super(FOFE_NN, self).__init__()
-        self.doc_fofe_conv = []
-        for i in range(2, fofe_max_length+1):
-            self.doc_fofe_conv.append(fofe_conv1d(emb_dims, fofe_alpha, i, i))
-        self.doc_fofe_conv = nn.ModuleList(self.doc_fofe_conv)
-        self.query_fofe = fofe_linear(emb_dims, fofe_alpha)
-        self.emb_dims = emb_dims
-        self.fnn = nn.Sequential(
-            nn.Conv2d(emb_dims*2, emb_dims*4, 1, 1, bias=False),
-            nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*4, 1, 1, bias=False),
-            nn.BatchNorm2d(emb_dims*4),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.Conv2d(emb_dims*4, emb_dims*2, 1, 1, bias=False),
-            nn.BatchNorm2d(emb_dims*2),
-            nn.LeakyReLU(0.1, inplace=True)
+        self.input = nn.Sequential(
+            nn.Conv1d(hidden_size*8, hidden_size*4, 1, 1, bias=False),
+            nn.BatchNorm1d(hidden_size*4),
+            nn.ReLU(inplace=True)
         )
-        self.s_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
-        self.e_conv = nn.Conv2d(emb_dims*2, 1, ((fofe_max_length-1),1), 1, bias=False)
-        
-        self.s_conv.apply(self.weights_init)      
-        self.e_conv.apply(self.weights_init) 
-        self.fnn.apply(self.weights_init) 
-        self.doc_fofe_conv.apply(self.weights_init)
+        self.layer = BottleNeck(hidden_size*4, hidden_size*2)
+        self.pointer = nn.Conv1d(hidden_size*2, 2, 1, 1, bias=False)
+        #self.apply(self.weights_init)
 
-    def dq_fofe(self, query, document):
-        query_fofe_code = self.query_fofe(query)
-        q_mat = []
-        for i in range(document.size(-2)):
-            q_mat.append(query_fofe_code)
-        query_mat = torch.transpose(torch.cat(q_mat,-2),-2,-1).unsqueeze(-2)
-        fofe_out = []
-        for fofe_layer in self.doc_fofe_conv:
-            fofe_out.append(torch.cat([fofe_layer(document).unsqueeze(-2),query_mat],-3))
-        fofe_out = torch.cat(fofe_out,-2)
-        return fofe_out
-
-    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
-        
-        fofe_code = self.dq_fofe(query_emb, doc_emb)
-        x = self.fnn(fofe_code)
-        
-        # calculate scores for begin and end point
-        s_score = self.s_conv(x).squeeze(-2).squeeze(-2)
-        e_score = self.e_conv(x).squeeze(-2).squeeze(-2)
-        # mask scores
-        s_score.data.masked_fill_(doc_mask.data, -float('inf'))
-        e_score.data.masked_fill_(doc_mask.data, -float('inf'))
-        
-        if self.training:
-            # In training we output log-softmax for NLL
-            s_score = F.log_softmax(s_score, dim=1)
-            e_score = F.log_softmax(e_score, dim=1)
-        else:
-            # ...Otherwise 0-1 probabilities
-            s_score = F.softmax(s_score, dim=1)
-            e_score = F.softmax(e_score, dim=1)
-
-        return s_score, e_score
-
-
-
+    def forward(self, dq_input):
+        out = self.input(dq_input)
+        out = self.layer(out)
+        out = self.pointer(out)
+        return out
 
     
 class FOFE_NN_att(nn.Module):

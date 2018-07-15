@@ -63,16 +63,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
         self.fofe_linear = fofe_flex_all(opt['embedding_dim'], opt['hidden_size'], opt['fofe_alpha'])
-
-        """
-        self.fnn = nn.Sequential(
-            nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*4, opt['hidden_size']*2, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*2, 1, bias=False),
-            nn.Sigmoid()
-        )
+        self.fnn = FOFE_NN(opt['hidden_size'])
         """
         self.fnn = nn.Sequential(
             nn.Conv1d(opt['hidden_size']*8, opt['hidden_size']*4, 1, 1, bias=False),
@@ -85,7 +76,7 @@ class FOFEReader(nn.Module):
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-        )
+        )"""
         print(self) 
     #--------------------------------------------------------------------------------
 
