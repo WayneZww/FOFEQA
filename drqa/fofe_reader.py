@@ -14,6 +14,14 @@ from .utils import tri_num
 
 
 class FOFEReader(nn.Module):
+    def weights_init(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
+
     def __init__(self, opt, padding_idx=0, embedding=None):
         super(FOFEReader, self).__init__()
         # Store config
@@ -77,7 +85,8 @@ class FOFEReader(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
         )"""
-        print(self) 
+        print(self)
+        self.apply(self.weights_init)
     #--------------------------------------------------------------------------------
 
     def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):

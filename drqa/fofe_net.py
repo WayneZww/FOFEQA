@@ -139,18 +139,22 @@ class FOFE_NN(nn.Module):
         
     def __init__(self, hidden_size):
         super(FOFE_NN, self).__init__()
-        self.input = nn.Sequential(
-            nn.Conv1d(hidden_size*8, hidden_size*4, 1, 1, bias=False),
-            nn.BatchNorm1d(hidden_size*4),
-            nn.ReLU(inplace=True)
-        )
-        self.layer = BottleNeck(hidden_size*4, hidden_size*2)
-        self.pointer = nn.Conv1d(hidden_size*2, 2, 1, 1, bias=False)
-        #self.apply(self.weights_init)
+        self.conv = nn.Conv1d(hidden_size*8, hidden_size*4, 1, 1, bias=False)
+        self.bn = nn.BatchNorm1d(hidden_size*4)
+        self.relu = nn.ReLU(inplace=True)
+        self.layer1 = BottleNeck(hidden_size*4, hidden_size*4)
+        self.layer2 = BottleNeck(hidden_size*4, hidden_size*4)
+        self.layer3 = BottleNeck(hidden_size*4, hidden_size*4)
+        self.pointer = nn.Conv1d(hidden_size*4, 2, 1, 1, bias=False)
+#        self.apply(self.weights_init)
 
     def forward(self, dq_input):
-        out = self.input(dq_input)
-        out = self.layer(out)
+        out = self.conv(dq_input)
+        out = self.bn(out)
+        out = self.relu(out)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
         out = self.pointer(out)
         return out
 
