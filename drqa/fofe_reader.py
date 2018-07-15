@@ -75,7 +75,7 @@ class FOFEReader(nn.Module):
         )
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(opt['hidden_size']*8, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(opt['hidden_size']*16, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
@@ -245,18 +245,24 @@ class FOFEReader(nn.Module):
         l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
         r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
-        ctx_ans = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch], dim=1)
-
+        
         # generate query batch
         query_fofe = self.fofe_linear(query_emb)
         query_batch = []
-        for i in range(ctx_ans.size(-1)):
+        for i in range(ans_batch.size(-1)):
             query_batch.append(query_fofe)
-        query_batch = torch.cat(query_batch, dim=-1)   
-        dq_input = torch.cat([ctx_ans, query_batch], dim=1)
-        #import pdb; pdb.set_trace()
+        query_batch = torch.cat(query_batch, dim=-1)  
+
+        # add attention
+        ql_ctx_batch = l_ctx_batch.mul(query_batch)
+        qr_ctx_batch = r_ctx_batch.mul(query_batch)
+        qans_batch = ans_batch.mul(query_batch)
+        qquery_batch = query_batch.mul(query_batch)
+
+        dq_input = torch.cat([l_ctx_batch, ql_ctx_batch, r_ctx_batch, qr_ctx_batch, \
+                            ans_batch, qans_batch, query_batch, qquery_batch], dim=1)
+
         if self.training:
-            #import pdb; pdb.set_trace()
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
             return dq_input, target_score
         else:

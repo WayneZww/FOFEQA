@@ -402,8 +402,8 @@ class fofe_flex_dual(nn.Module):
     def forward(self, x):
         length = x.size(-2)
         #import pdb; pdb.set_trace()
-        matrix_l = torch.pow(self.alpha_l, torch.linspace(length-1,0,length).cuda()).unsqueeze(0)
-        matrix_h = torch.pow(self.alpha_h, torch.linspace(length-1,0,length).cuda()).unsqueeze(0)
+        matrix_l = torch.pow(self.alpha_l, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(0)
+        matrix_h = torch.pow(self.alpha_h, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(0)
         fofe_l = matrix_l.matmul(x).squeeze(-2)
         fofe_h = matrix_h.matmul(x).squeeze(-2)
         fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
@@ -428,12 +428,12 @@ class fofe_flex_dual_filter(nn.Module):
         fofe_kernel_l = x.new_zeros(x.size(1), 1, self.length)
         fofe_kernel_h = x.new_zeros(x.size(1), 1, self.length)
         if self.inverse:
-            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, torch.range(0, self.length-1).cuda())
-            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, torch.range(0, self.length-1).cuda())
+            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, x.new_tensor(torch.range(0, self.length-1)))
+            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, x.new_tensor(torch.range(0, self.length-1)))
             x = F.pad(x,(0, self.length))
         else :
-            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, torch.linspace(self.length-1, 0, self.length).cuda())
-            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, torch.linspace(self.length-1, 0, self.length).cuda())
+            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
+            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
             x = F.pad(x,(self.length, 0))
         fofe_l = F.conv1d(x, fofe_kernel_l, bias=None, stride=1, 
                         padding=0, groups=self.channels)
@@ -462,10 +462,10 @@ class fofe_flex_filter(nn.Module):
         #    self.alpha = 0.9
         fofe_kernel = x.new_zeros(x.size(1), 1, self.length)
         if self.inverse:
-            fofe_kernel[:,:,]=torch.pow(self.alpha, torch.range(0, self.length-1).cuda())
+            fofe_kernel[:,:,]=torch.pow(self.alpha, x.new_tensor(torch.range(0, self.length-1)))
             x = F.pad(x,(0, self.length))
         else :
-            fofe_kernel[:,:,]=torch.pow(self.alpha, torch.linspace(self.length-1, 0, self.length).cuda())
+            fofe_kernel[:,:,]=torch.pow(self.alpha, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
             x = F.pad(x,(self.length, 0))
         x = F.conv1d(x, fofe_kernel, bias=None, stride=1, 
                         padding=0, groups=self.channels)
