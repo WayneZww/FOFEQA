@@ -385,9 +385,9 @@ class FOFEReader(nn.Module):
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             scores = self.fnn(dq_input)
             fl_loss = self.fl_loss(scores, target_score)
-            #ce_loss = self.ce_loss(scores, target_score)
-            #loss = fl_loss + ce_loss
-            return fl_loss
+            ce_loss = self.ce_loss(scores, target_score)
+            loss = fl_loss + ce_loss
+            return loss
         else :
             # import pdb;pdb.set_trace()
             #--------------------------------------------------------------------------------
