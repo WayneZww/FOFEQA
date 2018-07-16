@@ -20,10 +20,13 @@ class FocalLoss(nn.Module):
         class_mask = inputs.new(inputs.shape).fill_(0)
         ids = targets.view(-1, 1)
         class_mask.scatter_(1, ids.data, 1.)
+        _probs = F.softmax(inputs, dim=1)
 
-        alpha = inputs.new_tensor(self.alpha[ids.view(-1)])        
-        log_p = (inputs*class_mask).sum(1).view(-1,1)
-        batch_loss = -alpha*(torch.pow((torch.exp(log_p)), self.gamma))*log_p 
+        alpha = inputs.new_tensor(self.alpha[ids.view(-1)])  
+        probs = (_probs*class_mask).sum(1).view(-1,1)
+        log_p = probs.log()
+        
+        batch_loss = -alpha*(torch.pow((1-probs), self.gamma))*log_p 
         
         if self.size_average:
             loss = batch_loss.mean()

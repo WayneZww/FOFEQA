@@ -79,10 +79,9 @@ class FOFEReader(nn.Module):
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-            #nn.Sigmoid()
         )
-        self.neg_ratio=torch.Tensor([0.2, 0.8]).cuda()
-        self.focal_loss = FocalLoss1d(2, gamma=2, alpha=torch.Tensor([0.75, 0.25]).unsqueeze(-1))
+        self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=torch.Tensor([1-opt['focal_alpha'],opt['focal_alpha']]).unsqueeze(-1))
+        self.ce_loss = nn.CrossEntropyLoss()
     
     #--------------------------------------------------------------------------------
 
@@ -385,9 +384,8 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             scores = self.fnn(dq_input)
-            scores = F.log_softmax(scores, dim=1)
-            fl_loss = self.focal_loss(scores, target_score)
-            #ce_loss = F.nll_loss(scores, target_score, weight=self.neg_ratio)
+            fl_loss = self.fl_loss(scores, target_score)
+            #ce_loss = self.ce_loss(scores, target_score)
             #loss = fl_loss + ce_loss
             return fl_loss
         else :

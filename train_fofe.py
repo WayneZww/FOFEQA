@@ -169,6 +169,8 @@ def setup():
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', type=float, default=0.8)
     parser.add_argument('--fofe_max_length', type=int, default=64)
+    parser.add_argument('--focal_alpha', type=float, default=0.25)
+    parser.add_argument('--focal_gamma', type=int, default=2)
 
     args = parser.parse_args()
 
