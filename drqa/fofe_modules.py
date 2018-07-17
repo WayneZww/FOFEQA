@@ -397,10 +397,12 @@ class fofe_flex_all(nn.Module):
         self.alpha = Parameter(torch.ones(channels, 1)*alpha)
         self.alpha.requires_grad_(True)
         
-    def forward(self, x):
+    def forward(self, x, x_mask):
         length = x.size(-2)
+        mask = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1).permute(2,0,1)
         matrix = torch.pow(self.alpha, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(1)
         fofe_code = F.conv1d(x.transpose(-1,-2), matrix, bias=None, stride=1, padding=0, groups = self.channels)
+        fofe_code = fofe_code.mul(mask)
         return fofe_code
 
 
@@ -414,8 +416,8 @@ class fofe_flex_all_conv(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-    def forward(self, x):
-        fofe_code = self.fofe(x)
+    def forward(self, x, x_mask):
+        fofe_code = self.fofe(x, x_mask)
         out = self.conv(fofe_code)
         return out
 
