@@ -333,7 +333,7 @@ class FOFEReader(nn.Module):
             #predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
             # return predict_s, predict_e
             #--------------------------------------------------------------------------------
-            dq_input, starts, ends, d_mask = self.scan_all(doc_emb, query_emb, doc_mask)
+            dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
