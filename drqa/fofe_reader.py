@@ -189,7 +189,7 @@ class FOFEReader(nn.Module):
 
     #--------------------------------------------------------------------------------
         
-    def scan_all(self, doc_emb, query_emb, doc_mask, target_s=None, target_e=None):
+    def scan_all(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
         doc_len = doc_emb.size(-1)
@@ -233,7 +233,7 @@ class FOFEReader(nn.Module):
         ans_batch = torch.cat(ans_batch, dim=-1)
 
         # generate query batch
-        query_fofe = self.fofe_linear(query_emb)
+        query_fofe = self.fofe_linear(query_emb, query_mask)
         query_batch = []
         for i in range(ans_batch.size(-1)):
             query_batch.append(query_fofe)
@@ -305,7 +305,7 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training :
             #--------------------------------------------------------------------------------            
-            dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
+            dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             scores = self.fnn(dq_input)
             fl_loss = self.fl_loss(scores, target_score)
