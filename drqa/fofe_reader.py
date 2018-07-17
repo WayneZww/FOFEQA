@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from .fofe_modules import fofe_flex_dual_linear as fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_encoder, fofe_linear_tricontext
 
-from .fofe_net import FOFENet, FOFE_NN
+from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
 from .focal_loss import FocalLoss1d
 
@@ -72,7 +72,12 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
         self.fofe_linear = fofe_flex_dual(opt['embedding_dim'],  opt['hidden_size'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
-        self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
+        if opt['net_arch'] == 'FNN':
+            self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
+        elif opt['net_arch'] == 'FNN_att':
+            self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
+        else:
+            raise Exception('Architecture undefined!')
         """
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
