@@ -95,7 +95,7 @@ class FOFEReader(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
         )
-        self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=torch.Tensor([1-opt['focal_alpha'],opt['focal_alpha']]).unsqueeze(-1))
+        self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
         print(self) 

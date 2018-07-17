@@ -6,12 +6,13 @@ from torch.autograd import Variable
 class FocalLoss(nn.Module):
     # Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
     # Loss(log_softmax(x), class) = - \alpha (1-exp(log_softmax(x))[class])^gamma \log_softmax(x)[class]
-    def __init__(self, class_num, alpha=None, gamma=2, size_average=True):
+    def __init__(self, class_num, rare_alpha=None, gamma=2, size_average=True):
         super(FocalLoss, self).__init__()
-        if alpha is None:
+        self.rare_alpha = rare_alpha
+        if rare_alpha is None:
             self.alpha = torch.ones(class_num, 1)
         else:
-            self.alpha = alpha
+            self.alpha = torch.Tensor([1-rare_alpha, rare_alpha]).unsqueeze(-1)
         self.gamma = gamma
         self.class_num = class_num
         self.size_average = size_average
@@ -33,6 +34,10 @@ class FocalLoss(nn.Module):
         else:
             loss = batch_loss.sum()
         return loss
+
+    def extra_repr(self):
+        return 'class_num={class_num}, rare_alpha={rare_alpha}, ' \
+                'gamma={gamma}, size_average={size_average}'.format(**self.__dict__) 
     
 
 class FocalLoss1d(nn.Module):
