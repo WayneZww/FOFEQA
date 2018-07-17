@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_all_conv as fofe_flex_all, fofe_encoder_conv as fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_encoder, fofe_linear_tricontext
 
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
@@ -57,32 +57,44 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder(doc_input_size, opt['hidden_size'], opt['fofe_alpha'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder_dual(doc_input_size, opt['fofe_alpha']-0.4, opt['fofe_alpha'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
-        n_ctx_types = 1
+        """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
             n_ctx_types += 2
         if (self.opt['contexts_excl_cand']):
             n_ctx_types += 2
-        """self.fofe_tricontext_encoder = fofe_linear_tricontext(doc_input_size,
+        self.fofe_tricontext_encoder = fofe_linear_tricontext(doc_input_size,
                                                               opt['fofe_alpha'],
                                                               cand_len_limit=self.opt['max_len'],
                                                               doc_len_limit=809,
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_all(opt['embedding_dim'], opt['hidden_size'], opt['fofe_alpha'])
-        self.fnn = FOFE_NN(opt['hidden_size'])
+        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
+
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(opt['hidden_size']*4, opt['hidden_size']*2, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(opt['hidden_size']*2, 1, bias=False),
+            nn.Sigmoid()
+        )
+        """
+        self.fnn = nn.Sequential(
+            nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-        )"""
+        )
         self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=torch.Tensor([1-opt['focal_alpha'],opt['focal_alpha']]).unsqueeze(-1))
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
@@ -188,7 +200,7 @@ class FOFEReader(nn.Module):
             return dq_input, cands_ans_pos
 
     #--------------------------------------------------------------------------------
-        
+           
     def scan_all(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
@@ -212,8 +224,8 @@ class FOFEReader(nn.Module):
         starts = []
         ends = []
         for i in range(max_len):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 1+i:doc_len+1])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
+            l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
+            r_ctx_batch.append(inverse_fofe[:, :, -1, 1+i:doc_len+1])
             ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
             if self.training:
                 for j in range(batchsize):
@@ -240,13 +252,14 @@ class FOFEReader(nn.Module):
         query_batch = torch.cat(query_batch, dim=-1)  
 
         # add attention
-        ql_ctx_batch = l_ctx_batch.mul(query_batch)
+        """ql_ctx_batch = l_ctx_batch.mul(query_batch)
         qr_ctx_batch = r_ctx_batch.mul(query_batch)
         qans_batch = ans_batch.mul(query_batch)
         qquery_batch = query_batch.mul(query_batch)
 
         dq_input = torch.cat([l_ctx_batch, ql_ctx_batch, r_ctx_batch, qr_ctx_batch, \
-                            ans_batch, qans_batch, query_batch, qquery_batch], dim=1)
+                            ans_batch, qans_batch, query_batch, qquery_batch], dim=1)"""
+        dq_input = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch, query_batch], dim=1)
 
         if self.training:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()

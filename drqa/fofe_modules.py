@@ -116,7 +116,7 @@ class fofe_encoder(nn.Module):
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
-
+    
     def fofe(self, x):
         forward_fofe = []
         inverse_fofe = []
@@ -127,7 +127,7 @@ class fofe_encoder(nn.Module):
 
         forward_fofe = torch.cat(forward_fofe, dim=-2)
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)
-
+        
         return forward_fofe, inverse_fofe
 
     def forward(self, x):
@@ -358,7 +358,7 @@ class fofe_dual(nn.Module):
 
 
 class fofe_flex(nn.Module):
-    def __init__(self, channels, alpha): 
+    def __init__(self, inplanes, alpha): 
         super(fofe_flex, self).__init__()
         self.alpha = Parameter(torch.ones(1)*alpha)
         self.alpha.requires_grad_(True)
@@ -370,24 +370,62 @@ class fofe_flex(nn.Module):
         fofe_code = matrix.matmul(x).squeeze(-2)
         return fofe_code
 
+    def extra_repr(self):
+        return 'inplanes={inplanes}'.format(**self.__dict__)
+
 
 class fofe_flex_dual(nn.Module):
-    def __init__(self, channels, alpha_l, alpha_h): 
+    def __init__(self, inplanes, alpha_l, alpha_h): 
         super(fofe_flex_dual, self).__init__()
+        self.inplanes = inplanes
         self.alpha_l = Parameter(torch.ones(1)*alpha_l)
         self.alpha_h = Parameter(torch.ones(1)*alpha_h)
         self.alpha_l.requires_grad_(True)
         self.alpha_h.requires_grad_(True)
         
-    def forward(self, x):
+    def forward(self, x, x_mask):
         length = x.size(-2)
-        #import pdb; pdb.set_trace()
-        matrix_l = torch.pow(self.alpha_l, torch.linspace(length-1,0,length).cuda()).unsqueeze(0)
-        matrix_h = torch.pow(self.alpha_h, torch.linspace(length-1,0,length).cuda()).unsqueeze(0)
-        fofe_l = matrix_l.matmul(x).squeeze(-2)
-        fofe_h = matrix_h.matmul(x).squeeze(-2)
-        fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
+        matrix_l = torch.pow(self.alpha_l, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(0)
+        matrix_h = torch.pow(self.alpha_h, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(0)
+        mask_l = torch.pow(self.alpha_l, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        mask_h = torch.pow(self.alpha_h, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        fofe_l = matrix_l.matmul(x).squeeze(-2).mul(mask_l)
+        fofe_h = matrix_h.matmul(x).squeeze(-2).mul(mask_h)
+        fofe_code = torch.cat([fofe_l, fofe_h], dim=-1).unsqueeze(-1)
         return fofe_code
+
+    def extra_repr(self):
+        return 'inplanes={inplanes}'.format(**self.__dict__)
+
+
+class fofe_encoder_dual(nn.Module):
+    def __init__(self, emb_dim, fofe_alpha_l, fofe_alpha_h, fofe_max_length):
+        super(fofe_encoder_dual, self).__init__()
+        self.forward_filter = []
+        self.inverse_filter = []
+        for i in range(fofe_max_length):
+            self.forward_filter.append(fofe_flex_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1))
+            self.inverse_filter.append(fofe_flex_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1, inverse=True))
+
+        self.forward_filter = nn.ModuleList(self.forward_filter)
+        self.inverse_filter = nn.ModuleList(self.inverse_filter)
+    
+    def fofe(self, x):
+        forward_fofe = []
+        inverse_fofe = []
+        for forward_filter in self.forward_filter:
+            forward_fofe.append(forward_filter(x).unsqueeze(-2))
+        for inverse_filter in self.inverse_filter:
+            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
+
+        forward_fofe = torch.cat(forward_fofe, dim=-2)
+        inverse_fofe = torch.cat(inverse_fofe, dim=-2)
+        
+        return forward_fofe, inverse_fofe
+
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
+        return forward_fofe, inverse_fofe
 
 
 class fofe_flex_all(nn.Module):
@@ -481,12 +519,12 @@ class fofe_flex_dual_filter(nn.Module):
         fofe_kernel_l = x.new_zeros(x.size(1), 1, self.length)
         fofe_kernel_h = x.new_zeros(x.size(1), 1, self.length)
         if self.inverse:
-            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, torch.range(0, self.length-1).cuda())
-            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, torch.range(0, self.length-1).cuda())
+            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, x.new_tensor(torch.range(0, self.length-1)))
+            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, x.new_tensor(torch.range(0, self.length-1)))
             x = F.pad(x,(0, self.length))
         else :
-            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, torch.linspace(self.length-1, 0, self.length).cuda())
-            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, torch.linspace(self.length-1, 0, self.length).cuda())
+            fofe_kernel_l[:,:,]=torch.pow(self.alpha_l, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
+            fofe_kernel_h[:,:,]=torch.pow(self.alpha_h, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
             x = F.pad(x,(self.length, 0))
         fofe_l = F.conv1d(x, fofe_kernel_l, bias=None, stride=1, 
                         padding=0, groups=self.channels)
@@ -495,6 +533,10 @@ class fofe_flex_dual_filter(nn.Module):
         fofe_code = torch.cat([fofe_l, fofe_h], dim=1)
 
         return fofe_code
+
+    def extra_repr(self):
+        return 'inplanes={channels}, length={length}， ' \
+            'inverse={inverse}'.format(**self.__dict__)
 
 
 class fofe_flex_filter(nn.Module):
@@ -511,15 +553,71 @@ class fofe_flex_filter(nn.Module):
         #    self.alpha = 0.9
         fofe_kernel = x.new_zeros(x.size(1), 1, self.length)
         if self.inverse:
-            fofe_kernel[:,:,]=torch.pow(self.alpha, torch.range(0, self.length-1).cuda())
+            fofe_kernel[:,:,]=torch.pow(self.alpha, x.new_tensor(torch.range(0, self.length-1)))
             x = F.pad(x,(0, self.length))
         else :
-            fofe_kernel[:,:,]=torch.pow(self.alpha, torch.linspace(self.length-1, 0, self.length).cuda())
+            fofe_kernel[:,:,]=torch.pow(self.alpha, x.new_tensor(torch.linspace(self.length-1, 0, self.length)))
             x = F.pad(x,(self.length, 0))
         x = F.conv1d(x, fofe_kernel, bias=None, stride=1, 
                         padding=0, groups=self.channels)
 
         return x
+
+    def extra_repr(self):
+        return 'inplanes={inplanes}, length={length}， ' \
+            'inverse={inverse}'.format(**self.__dict__)
+
+
+class fofe_flex_dual_linear_filter(nn.Module):
+    def __init__(self, inplanes, planes, alpha_l=0.4, alpha_h=0.8, length=3, inverse=False):
+        super(fofe_flex_dual_linear_filter, self).__init__()
+        self.fofe = fofe_flex_dual(inplanes, alpha_l, alpha_h)
+        self.conv = nn.Sequential(
+            nn.Conv1d(inplanes, planes, 1, 1, bias=False),
+            nn.BatchNorm1d(planes),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        fofe = self.fofe(x)
+        out = self.conv(fofe)
+        return out
+
+
+class fofe_encoder_conv(fofe_encoder):
+    def __init__(self, inplanes, planes, fofe_alpha_l, fofe_alpha_h, fofe_max_length):
+        super(fofe_encoder_conv, self).__init__(inplanes, fofe_alpha_l, fofe_alpha_h, fofe_max_length)
+        self.forward_conv = nn.Sequential(
+            nn.Conv2d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm2d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+        self.inverse_conv = nn.Sequential(
+            nn.Conv2d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm2d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        forward_fofe, inverse_fofe = self.fofe(x)
+        forward = self.forward_conv(forward_fofe)
+        inverse = self.inverse_conv(inverse_fofe)
+
+        return forward, inverse
+
+
+class fofe_flex_dual_linear(nn.Module):
+    def __init__(self, inplanes, planes, alpha_l=0.4, alpha_h=0.8, length=3, inverse=False):
+        super(fofe_flex_dual_linear, self).__init__()
+        self.fofe = fofe_flex_dual(inplanes, alpha_l, alpha_h)
+        self.conv = nn.Sequential(
+            nn.Conv1d(inplanes*2, planes*2, 1, 1, bias=False),
+            nn.BatchNorm1d(planes*2),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        fofe = self.fofe(x)
+        out = self.conv(fofe.unsqueeze(-1))
+        return out
 
 
 class Simility(nn.Module):

@@ -19,7 +19,10 @@ def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
     # ---------------------------------------------------------------------------------
-    train, dev, dev_y, embedding, opt = load_data(vars(args))
+    if args.test_train:
+        train, train_y, dev, dev_y, embedding, opt = load_data(vars(args))
+    else:
+        train, dev, dev_y, embedding, opt = load_data(vars(args))
     # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
@@ -40,7 +43,7 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
-        batches = BatchGen(dev, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
+        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -73,14 +76,23 @@ def main():
         # eval
         if args.test_only and args.resume:
             break 
-
-        batches = BatchGen(dev, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
+        
+        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
             log.debug('> evaluating dev set [{}/{}]'.format(i, len(batches)))
         em, f1 = score(predictions, dev_y)
         log.warning("dev EM: {} F1: {}".format(em, f1))
+
+        if args.test_train and epoch % 10 == 0:
+            batches = BatchGen(train, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
+            predictions = []
+            for i, batch in enumerate(batches):
+                predictions.extend(model.predict(batch))
+                log.debug('> evaluating train set [{}/{}]'.format(i, len(batches)))
+            em, f1 = score(predictions, train_y)
+            log.warning("train EM: {} F1: {}".format(em, f1))
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
@@ -236,16 +248,18 @@ def load_data(opt):
     BatchGen.ner_size = opt['ner_size']
     with open(opt['data_file'], 'rb') as f:
         data = msgpack.load(f, encoding='utf8')
-    train = data['train']
+    
+    data['dev'].sort(key=lambda x: len(x[1]))
+    dev = [x[:-1] for x in data['dev']]
+    dev_y = [x[-1] for x in data['dev']]
     if opt['test_train']:
         data['train'].sort(key=lambda x: len(x[1]))
-        dev = [x[:] for x in data['train']]
-        dev_y = [[x[-3]] for x in data['train']]
+        train = [x[:] for x in data['train']]
+        train_y = [[x[-3]] for x in data['train']]
+        return train, train_y, dev, dev_y, embedding, opt
     else:
-        data['dev'].sort(key=lambda x: len(x[1]))
-        dev = [x[:-1] for x in data['dev']]
-        dev_y = [x[-1] for x in data['dev']]
-    return train, dev, dev_y, embedding, opt
+        train = data['train']  
+        return train, dev, dev_y, embedding, opt
 
 
 class BatchGen:
@@ -319,7 +333,7 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval or self.test_train:
+            if not self.eval:
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.gpu:
@@ -330,7 +344,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval and not self.test_train:
+            if self.eval:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, text, span)
             else:
