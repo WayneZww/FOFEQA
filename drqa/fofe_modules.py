@@ -391,7 +391,7 @@ class fofe_flex_dual(nn.Module):
         mask_h = torch.pow(self.alpha_h, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
         fofe_l = matrix_l.matmul(x).squeeze(-2).mul(mask_l)
         fofe_h = matrix_h.matmul(x).squeeze(-2).mul(mask_h)
-        fofe_code = torch.cat([fofe_l, fofe_h], dim=-1).unsqueeze(-1)
+        fofe_code = torch.cat([fofe_l, fofe_h], dim=-1)
         return fofe_code
 
     def extra_repr(self):
@@ -614,8 +614,8 @@ class fofe_flex_dual_linear(nn.Module):
             nn.BatchNorm1d(planes*2),
             nn.ReLU(inplace=True)
         )
-    def forward(self, x):
-        fofe = self.fofe(x)
+    def forward(self, x, x_mask):
+        fofe = self.fofe(x, x_mask)
         out = self.conv(fofe.unsqueeze(-1))
         return out
 

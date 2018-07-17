@@ -137,24 +137,50 @@ class FOFE_NN(nn.Module):
             m.weight.data.fill_(1.)
             m.bias.data.fill_(1e-4)
         
-    def __init__(self, hidden_size):
+    def __init__(self, doc_input_size, hidden_size):
         super(FOFE_NN, self).__init__()
+        self.forward_conv = nn.Sequential(
+            nn.Conv1d(doc_input_size, hidden_size*2, 1, 1, bias=False),
+            nn.BatchNorm1d(hidden_size*2),
+            nn.ReLU(inplace=True),
+        )
+        self.inverse_conv = nn.Sequential(
+            nn.Conv1d(doc_input_size, hidden_size*2, 1, 1, bias=False),
+            nn.BatchNorm1d(hidden_size*2),
+            nn.ReLU(inplace=True),
+        )
         self.conv = nn.Conv1d(hidden_size*8, hidden_size*4, 1, 1, bias=False)
         self.bn = nn.BatchNorm1d(hidden_size*4)
         self.relu = nn.ReLU(inplace=True)
-        self.layer1 = BottleNeck(hidden_size*4, hidden_size*4)
-        self.layer2 = BottleNeck(hidden_size*4, hidden_size*4)
-        self.layer3 = BottleNeck(hidden_size*4, hidden_size*4)
+        self.layer1 = nn.Sequential(
+            nn.Conv1d(hidden_size*4, hidden_size*4, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size*4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(hidden_size*4, hidden_size*4, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size*4),
+            nn.ReLU(inplace=True),
+        )
+#        self.layer1 = BottleNeck(hidden_size*4, hidden_size*4)
+#        self.layer2 = BottleNeck(hidden_size*4, hidden_size*4)
+#        self.layer3 = BottleNeck(hidden_size*4, hidden_size*4)
         self.pointer = nn.Conv1d(hidden_size*4, 2, 1, 1, bias=False)
 #        self.apply(self.weights_init)
+    def gather(self, dq_input):
+        [l_ctx_batch, ans_batch, r_ctx_batch, query] = dq_input
+        ans = self.forward_conv(ans_batch)
+        l_ctx = self.forward_conv(l_ctx_batch)
+        r_ctx = self.inverse_conv(r_ctx_batch)
+        out = torch.cat([l_ctx, ans, r_ctx, query], dim=1)
+        return out
 
     def forward(self, dq_input):
-        out = self.conv(dq_input)
+        out = self.gather(dq_input)
+        out = self.conv(out)
         out = self.bn(out)
         out = self.relu(out)
         out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
+#        out = self.layer2(out)
+#        out = self.layer3(out)
         out = self.pointer(out)
         return out
 

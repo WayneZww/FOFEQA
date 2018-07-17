@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_flex_dual_linear as fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_encoder, fofe_linear_tricontext
 
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
@@ -71,8 +71,8 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
-
+        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'],  opt['hidden_size'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
+        self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         """
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
@@ -82,7 +82,7 @@ class FOFEReader(nn.Module):
             nn.Linear(opt['hidden_size']*2, 1, bias=False),
             nn.Sigmoid()
         )
-        """
+        
         self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
@@ -94,7 +94,7 @@ class FOFEReader(nn.Module):
             nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-        )
+        )"""
         self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
@@ -259,7 +259,8 @@ class FOFEReader(nn.Module):
 
         dq_input = torch.cat([l_ctx_batch, ql_ctx_batch, r_ctx_batch, qr_ctx_batch, \
                             ans_batch, qans_batch, query_batch, qquery_batch], dim=1)"""
-        dq_input = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch, query_batch], dim=1)
+        #dq_input = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch, query_batch], dim=1)
+        dq_input = [l_ctx_batch, ans_batch, r_ctx_batch, query_batch]
 
         if self.training:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
