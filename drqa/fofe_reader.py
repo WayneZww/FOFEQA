@@ -98,7 +98,7 @@ class FOFEReader(nn.Module):
         self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=torch.Tensor([1-opt['focal_alpha'],opt['focal_alpha']]).unsqueeze(-1))
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
-    
+        print(self) 
     #--------------------------------------------------------------------------------
 
     def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):
