@@ -11,6 +11,7 @@ from .fofe_modules import fofe_flex_all_conv as fofe_flex_all, fofe_encoder_conv
 
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
+from .focal_loss import FocalLoss1d
 
 
 class FOFEReader(nn.Module):
@@ -74,10 +75,7 @@ class FOFEReader(nn.Module):
         self.fnn = FOFE_NN(opt['hidden_size'])
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(opt['hidden_size']*8, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
@@ -85,8 +83,10 @@ class FOFEReader(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
         )"""
-        print(self)
+        self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=torch.Tensor([1-opt['focal_alpha'],opt['focal_alpha']]).unsqueeze(-1))
+        self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
+    
     #--------------------------------------------------------------------------------
 
     def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):
@@ -188,21 +188,7 @@ class FOFEReader(nn.Module):
             return dq_input, cands_ans_pos
 
     #--------------------------------------------------------------------------------
-    def gen_random(self, doc_len):
-        rand_length = torch.randperm(min(self.opt['max_len'], doc_len-2))
-        negtive_num = self.opt['sample_num']*self.opt['neg_ratio']
-        pos_num = negtive_num//rand_length.size(0)+1
-        rand_position = []
-        for i in range(rand_length.size(0)):
-            rand_ans_length = rand_length[i].item()
-            if doc_len-rand_ans_length >= pos_num:
-                rand_position.append(random.sample(list(range(doc_len-rand_ans_length)), int(pos_num)))   
-            else:
-                rand_position.append(torch.randint(0, doc_len-rand_ans_length, (pos_num,), dtype=torch.long))    
-
-        return rand_length, rand_position
-
-    
+        
     def scan_all(self, doc_emb, query_emb, doc_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
@@ -321,9 +307,10 @@ class FOFEReader(nn.Module):
             #--------------------------------------------------------------------------------            
             dq_input, target_score = self.scan_all(doc_emb, query_emb, doc_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            score = self.fnn(dq_input)
-            score = F.log_softmax(score, dim=1)
-            loss = F.nll_loss(score, target_score)
+            scores = self.fnn(dq_input)
+            fl_loss = self.fl_loss(scores, target_score)
+            ce_loss = self.ce_loss(scores, target_score)
+            loss = fl_loss + ce_loss
             return loss
         else :
 			# import pdb;pdb.set_trace()
