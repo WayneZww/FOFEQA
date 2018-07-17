@@ -6,7 +6,7 @@ drqa/BACKUP/
 models/
 models_n_logs/
 TOBE_REMOVE/
-exps/exps_for_old_version/
+exps/OLD_VER_options/
 *.DS_Store
 *.log
 .vscode

@@ -62,21 +62,30 @@ class FOFEReader(nn.Module):
         self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'])
         """
         self.fnn = nn.Sequential(
-            nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
+            nn.Linear(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
             nn.ReLU(inplace=True),
             nn.Linear(opt['hidden_size']*4, opt['hidden_size']*2, bias=False),
             nn.ReLU(inplace=True),
             nn.Linear(opt['hidden_size']*2, 1, bias=False),
             nn.Sigmoid()
         )
-        """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 1, 1, 1, bias=False),
             nn.Sigmoid()
+        )
+        """
+        self.fnn = nn.Sequential(
+            nn.Conv1d(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False)
         )
         self.count=0
     
@@ -113,11 +122,10 @@ class FOFEReader(nn.Module):
 
 
 
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, target_s=None, target_e=None):
-        # TODO @SED [PRIORITY 1]: FIX PADDING / BATCHSIZE>1 ISSUE in DOC_FOFE.
-        # TODO @SED [PRIORITY 2]: FIX PADDING / BATCHSIZE>1 ISSUE in QUERY_FOFE.
-        _doc_fofe, _cands_ans_pos = self.fofe_tricontext_encoder(doc_emb)
-        _query_fofe = self.fofe_linear(query_emb)
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None):
+        #TODO @SED: REMOVE REDUNDANT COPYING.
+        _query_fofe = self.fofe_linear(query_emb, query_mask)
+        _doc_fofe, _cands_ans_pos, _padded_cands_mask = self.fofe_tricontext_encoder(doc_emb, doc_mask)
 
         batch_size = _query_fofe.size(0)
         query_embedding_dim = _query_fofe.size(-1)
@@ -186,12 +194,21 @@ class FOFEReader(nn.Module):
             samples_target_score = target_score.new_empty(batch_size * sample_num, 1)
             samples_target_score.copy_(target_score.index_select(0, samples_idx))
 
-            #import pdb;pdb.set_trace()
+            # 4. Reshape samples_dq_input and samples_target_score to work on conv1d (instead of linear)
+            samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
+            samples_target_score = samples_target_score.transpose(-1,-2).long()
+            
             return samples_dq_input, samples_target_score
         else:
             cands_ans_pos = _cands_ans_pos.new_empty(batch_size*n_cands_ans,_cands_ans_pos.size(-1))
             cands_ans_pos.copy_(_cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)]))
-            return dq_input, cands_ans_pos
+
+            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
+            
+            # 4. Reshape dq_input to work on conv1d (instead of linear)
+            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
+            
+            return dq_input, cands_ans_pos, padded_cands_mask
 
     #--------------------------------------------------------------------------------
 
@@ -352,15 +369,20 @@ class FOFEReader(nn.Module):
         if self.training :
             #--------------------------------------------------------------------------------            
             #dq_input, target_score = self.sample(doc_emb, query_emb, target_s, target_e)
-            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            score = self.fnn(dq_input.transpose(-1,-2).unsqueeze(0))
-            loss = F.mse_loss(score, target_score.transpose(-1,-2).unsqueeze(0), size_average=False)
+            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e)
+            score = self.fnn(dq_input)
+            score = F.log_softmax(score, dim=1)
+            loss = F.nll_loss(score, target_score)
+            #import pdb;pdb.set_trace()
             return loss
         else :
             #--------------------------------------------------------------------------------
-            dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
-            score = self.fnn(dq_input.transpose(-1,-2).unsqueeze(0))
-            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score.squeeze(0).squeeze(0))
+            dq_input, cands_ans_pos, padded_cands_mask  = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask)
+            score = self.fnn(dq_input)
+            score = F.softmax(score, dim=1)
+            score = score[:,1:,:].squeeze(0).squeeze(0)
+            score.data.masked_fill_(padded_cands_mask.squeeze(-1).data, -float('inf'))
+            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
             return predict_s, predict_e
             #--------------------------------------------------------------------------------
             

@@ -19,7 +19,7 @@ def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
     # ---------------------------------------------------------------------------------
-    train, dev, dev_y, embedding, opt = load_data(vars(args))
+    train, train_y, dev, dev_y, embedding, opt = load_data(vars(args))
     # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
@@ -60,21 +60,34 @@ def main():
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
-        if not args.test_only:
-            batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
-            start = datetime.now()
-            for i, batch in enumerate(batches):
-                model.update(batch)
-                if i % args.log_per_updates == 0:
-                    log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                        epoch, model.updates, model.train_loss.value,
-                        str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+        batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
+        start = datetime.now()
+        for i, batch in enumerate(batches):
+            model.update(batch)
+            if i % args.log_per_updates == 0:
+                log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
+                    epoch, model.updates, model.train_loss.value,
+                    str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+        log.debug('\n')
+        # ---------------------------------------------------------------------------------
+        # eval train set
+        batches_exclude_target = BatchGen(train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        train_predictions = []
+        quarter_epochs = (epoch_0 + args.epochs) // 4
+        if epoch % quarter_epochs == 0:
+            for i, batch in enumerate(batches_exclude_target):
+                train_predictions.extend(model.predict(batch))
+                log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
+            em, f1 = score(train_predictions, train_y)
+            log.warning("train EM: {} F1: {}".format(em, f1))
+            if em < 0.1:
+                log.warning('DEBUG: EM score below threshold, \
+                             hence outputing the prediction and target for debugging:\n\
+                             train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, train_y))
             log.debug('\n')
-        # eval
-        if args.test_only and args.resume:
-            break 
-
-        batches = BatchGen(dev, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
+        # ---------------------------------------------------------------------------------
+        # eval dev set
+        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
             predictions.extend(model.predict(batch))
@@ -91,9 +104,6 @@ def main():
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
                 log.info('[new best model saved.]')
-
-        if args.test_only:
-            break
 
 
 def setup():
@@ -224,7 +234,7 @@ def lr_decay(optimizer, lr_decay):
 
 
 def load_data(opt):
-    with open(opt['meta_file'], 'rb') as f:
+    with open('./data/SQuAD/meta.msgpack', 'rb') as f:
         meta = msgpack.load(f, encoding='utf8')
     embedding = torch.Tensor(meta['embedding'])
     opt['pretrained_words'] = True
@@ -236,23 +246,23 @@ def load_data(opt):
     BatchGen.ner_size = opt['ner_size']
     with open(opt['data_file'], 'rb') as f:
         data = msgpack.load(f, encoding='utf8')
-    train = data['train']
-    if opt['test_train']:
-        data['train'].sort(key=lambda x: len(x[1]))
-        dev = [x[:] for x in data['train']]
-        dev_y = [[x[-3]] for x in data['train']]
-    else:
-        data['dev'].sort(key=lambda x: len(x[1]))
-        dev = [x[:-1] for x in data['dev']]
-        dev_y = [x[-1] for x in data['dev']]
-    return train, dev, dev_y, embedding, opt
+    # ---------------------------------------------------------------------------------
+    data['train'].sort(key=lambda x: len(x[1]))
+    train = [x[:-3]+x[-2:] for x in data['train']]
+    train_y = [[x[-3]] for x in data['train']]
+    data['dev'].sort(key=lambda x: len(x[1]))
+    dev = [x[:-1] for x in data['dev']]
+    dev_y = [x[-1] for x in data['dev']]
+    return train, train_y, dev, dev_y, embedding, opt
+    # ---------------------------------------------------------------------------------
+
 
 
 class BatchGen:
     pos_size = None
     ner_size = None
 
-    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False):
+    def __init__(self, data, batch_size, gpu, evaluation=False):
         """
         input:
             data - list of lists
@@ -261,7 +271,6 @@ class BatchGen:
         self.batch_size = batch_size
         self.eval = evaluation
         self.gpu = gpu
-        self.test_train = test_train
 
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
@@ -282,11 +291,15 @@ class BatchGen:
         for batch in self.data:
             batch_size = len(batch)
             batch = list(zip(*batch))
-
-            if self.eval and not self.test_train:
+            if self.eval:
+                # ---------------------------------------------------------------------------------
+                # if self.eval and len(batch) == 10, then this is a training set eval (so remove last 2 target cols)
+                if len(batch) == 10:
+                    batch = batch[:-2]
+                # ---------------------------------------------------------------------------------
                 assert len(batch) == 8
             else:
-                assert len(batch) == 11
+                assert len(batch) == 10
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -319,9 +332,9 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval or self.test_train:
-                y_s = torch.LongTensor(batch[-2])
-                y_e = torch.LongTensor(batch[-1])
+            if not self.eval:
+                y_s = torch.LongTensor(batch[8])
+                y_e = torch.LongTensor(batch[9])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
@@ -330,7 +343,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval and not self.test_train:
+            if self.eval:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, text, span)
             else:
@@ -397,4 +410,3 @@ def score(pred, truth):
 
 if __name__ == '__main__':
     main()
-

@@ -141,7 +141,7 @@ class fofe_res_block(nn.Module):
         return out
 
 
-#--------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------<<
 class fofe_linear_tricontext(nn.Module):
     def __init__(self, embedding_dim,  alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True):
         super(fofe_linear_tricontext, self).__init__()
@@ -242,10 +242,7 @@ class fofe_linear_tricontext(nn.Module):
         
         return context_alpha_buffers, cands_pos
     
-    def forward(self, x_input):
-        # TODO @SED [PRIORITY 1]: FIX PADDING / BATCHSIZE>1 ISSUE in DOC_FOFE
-        #                   IDEA: bmm(context_alpha_buffer, doc_mask) then sum each row;
-        #                         this should tell the row of the cands that included padding
+    def forward(self, x_input, x_mask):
         batch_size = x_input.size(0)
         length = min(x_input.size(1), self.doc_len_limit)
         embedding_dim = x_input.size(2)
@@ -265,7 +262,7 @@ class fofe_linear_tricontext(nn.Module):
         for i in range(n_context_types):
             _batchwise_alpha_buffer.append(context_alpha_buffer[i].expand(batch_size, n_cand, length))
             _batchwise_fofe_codes.append(torch.bmm(_batchwise_alpha_buffer[i],x_input))
-        
+
         if ( not self.has_lr_ctx_cand_incl ) and ( not self.has_lr_ctx_cand_excl ):
             batchwise_fofe_codes = _batchwise_fofe_codes[0]
         elif ( not self.has_lr_ctx_cand_incl ) and ( self.has_lr_ctx_cand_excl ):
@@ -283,10 +280,11 @@ class fofe_linear_tricontext(nn.Module):
                                               _batchwise_fofe_codes[4],
                                               _batchwise_fofe_codes[3]], dim=-1)
         batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
-        return batchwise_fofe_codes, batchwise_cands_pos
+        batchwise_padded_cands = torch.bmm(_batchwise_alpha_buffer[0], x_mask.float().unsqueeze(-1)) > 0
+    
+        return batchwise_fofe_codes, batchwise_cands_pos, batchwise_padded_cands
 
-#--------------------------------------------------------------------------------
-
+#-------------------------------------------------------------------------------->>
 
 class fofe_linear(nn.Module):
     def __init__(self, channels, alpha): 
@@ -308,18 +306,27 @@ class fofe_linear(nn.Module):
         output = self.linear(fofe_code)
         return output
 
-
+#--------------------------------------------------------------------------------<<
 class fofe(nn.Module):
     def __init__(self, channels, alpha): 
         super(fofe, self).__init__()
         self.alpha = alpha
         
-    def forward(self, x):
+    def forward(self, x, x_mask):
         length = x.size(-2)
+        
+        # Construct Alphas Buffer (i.e. Matrix)
         matrix = x.new_empty(x.size(0),1,length)
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        
+        # Adjust Alphas Buffer to accommondate the padding
+        # NOTED: alpha for the padding will become > 1, but noted that their corresponding x values are 0.
+        matrix_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
+        matrix.copy_(torch.bmm(matrix_padding_rm, matrix))
+    
         fofe_code = torch.bmm(matrix,x).squeeze(-2)
         return fofe_code
+#-------------------------------------------------------------------------------->>
 
 
 class Simility(nn.Module):
