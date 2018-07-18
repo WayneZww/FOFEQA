@@ -216,17 +216,11 @@ def index_answer(row):
     answer_start = row[-2]
     answer_end = row[-1]
     try:
-<<<<<<< HEAD
         # This place, it give up starts, originally it is -3
         return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
         return row[:-2] + (None, None)
-=======
-        return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
-    except ValueError:
-        return row[:-2] + (None, None)
 # ---------------------------------------------------------------------------------
->>>>>>> test
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):

@@ -91,8 +91,7 @@ class FOFEReader(nn.Module):
     
     #--------------------------------------------------------------------------------
 
-    def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):
-        batch_size = self.opt['batch_size']
+    def rank_tri_select(self, cands_ans_pos, scores, batch_size, rejection_threshold=0.5):
         n_cands = cands_ans_pos.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
@@ -381,8 +380,9 @@ class FOFEReader(nn.Module):
             score = self.fnn(dq_input)
             score = F.softmax(score, dim=1)
             score = score[:,1:,:].squeeze(0).squeeze(0)
-            score.data.masked_fill_(padded_cands_mask.squeeze(-1).data, -float('inf'))
-            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
+            score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            batch_size = query.size(0)
+            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score, batch_size)
             return predict_s, predict_e
             #--------------------------------------------------------------------------------
             

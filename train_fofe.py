@@ -18,9 +18,7 @@ from drqa.utils import str2bool
 def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
-    # ---------------------------------------------------------------------------------
     train, train_y, dev, dev_y, embedding, opt = load_data(vars(args))
-    # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -40,6 +38,22 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
+        
+        # eval train set
+        batches_exclude_target = BatchGen(train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        train_predictions = []
+        for i, batch in enumerate(batches_exclude_target):
+            train_predictions.extend(model.predict(batch))
+            log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
+        em, f1 = score(train_predictions, train_y)
+        log.warning("train EM: {} F1: {}".format(em, f1))
+        if em < 0.1:
+            log.warning('DEBUG: EM score below threshold, \
+                        hence outputing the prediction and target for debugging:\n\
+                        train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, train_y))
+        log.debug('\n')
+
+        # eval dev set
         batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
         for i, batch in enumerate(batches):
@@ -57,19 +71,25 @@ def main():
         epoch_0 = 1
         best_val_score = 0.0
 
+    import pdb;pdb.set_trace()
+
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
-        batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
-        start = datetime.now()
-        for i, batch in enumerate(batches):
-            model.update(batch)
-            if i % args.log_per_updates == 0:
-                log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                    epoch, model.updates, model.train_loss.value,
-                    str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-        log.debug('\n')
-        # ---------------------------------------------------------------------------------
+        if not args.test_only:
+            batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
+            start = datetime.now()
+            for i, batch in enumerate(batches):
+                model.update(batch)
+                if i % args.log_per_updates == 0:
+                    log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
+                        epoch, model.updates, model.train_loss.value,
+                        str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+            log.debug('\n')
+
+        if args.test_only and args.resume:
+            break
+
         # eval train set
         batches_exclude_target = BatchGen(train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         train_predictions = []
@@ -85,7 +105,7 @@ def main():
                              hence outputing the prediction and target for debugging:\n\
                              train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, train_y))
             log.debug('\n')
-        # ---------------------------------------------------------------------------------
+
         # eval dev set
         batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         predictions = []
@@ -127,8 +147,6 @@ def setup():
                         const=True, default=torch.cuda.is_available(),
                         help='whether to use GPU acceleration.')
     # training
-    parser.add_argument('--test_train', action='store_true',
-                        help='whether use train set as dev set for debug')
     parser.add_argument('--test_only', action='store_true',
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
@@ -162,12 +180,10 @@ def setup():
                         help='perform rnn padding (much slower but more accurate).')
 
     # model
-    # ---------------------------------------------------------------------------------
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that include Candidates')
     parser.add_argument('--contexts_excl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that exclude Candidates')
-    # ---------------------------------------------------------------------------------
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)
     parser.add_argument('--question_layers', type=int, default=3)
@@ -292,11 +308,9 @@ class BatchGen:
             batch_size = len(batch)
             batch = list(zip(*batch))
             if self.eval:
-                # ---------------------------------------------------------------------------------
                 # if self.eval and len(batch) == 10, then this is a training set eval (so remove last 2 target cols)
                 if len(batch) == 10:
                     batch = batch[:-2]
-                # ---------------------------------------------------------------------------------
                 assert len(batch) == 8
             else:
                 assert len(batch) == 10

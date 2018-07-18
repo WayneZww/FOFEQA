@@ -127,13 +127,13 @@ class DocReaderModel(object):
                 #           -Suspect that it predict the padding, since we test without training.
                 print("--------------------------------------------------------------")
                 print(e)
+                import pdb;pdb.set_trace()
                 print("s_idx:", s_idx)
                 print("e_idx:", e_idx)
                 print("spans[i]:", spans[i])
                 print("spans:", spans)
                 print("text", text)
                 predictions.append("<PAD>")
-                import pdb;pdb.set_trace()
         #----------------------------------------------------------------------------
         return predictions
 

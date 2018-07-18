@@ -3,10 +3,10 @@
 work_dir="$HOME/CSE/FOFE_QA/FOFEQA_SED"
 now=$(date +"%Y%b%d_%Hh%Mm%Ss")
 data_root="$work_dir/data/"
-ver_n_opt="v3_opt6"
+ver_n_opt="v3_opt4"
 
 epoch_num=100
-batch_size=8
+batch_size=4
 sample_num=0
 neg_ratio=0
 max_cand_len=16
