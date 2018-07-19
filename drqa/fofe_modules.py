@@ -106,6 +106,7 @@ class fofe_res_filter(fofe_filter):
 
     def forward(self, x):
         if self.alpha == 1 or self.alpha == 0:
+            import pdb; pdb.set_trace()
             return x
         residual = x
         out = self.fofe_encode(x)
@@ -454,3 +455,72 @@ class fofe_tri_linear_res_block(res_conv_block):
         x = self.fofe_filter(x)
         x = self.res_conv(x)
         return x
+
+
+class res_fofe_conv_block(res_block):
+    def __init__(self,
+                 inplanes,
+                 planes,
+                 convs=3,
+                 fofe_alpha=0.8,
+                 fofe_length=3,
+                 dilation=1,
+                 downsample=None,
+                 fofe_inverse=False):
+        super(res_fofe_conv_block, self).__init__()
+        self.conv = []
+        self.conv.append(
+            fofe_bn_conv(inplanes,planes, fofe_length, 1, 0, dilation,
+                groups=1, bias=False))
+
+        for i in range(1, convs):
+            self.conv.append(nn.ReLU(inplace=True))
+            self.conv.append(
+                fofe_bn_conv(planes, planes, fofe_length, 1, 0, dilation,
+                    groups=1, bias=False))
+
+        self.conv = nn.Sequential(*self.conv)
+        self.downsample = downsample
+        self.relu = nn.ReLU(inplace=True)
+        self.apply(self.weights_init)
+
+
+class fofe_flex_all_filter(nn.Module):
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_flex_all_filter, self).__init__()
+        self.length = length
+        self.channels = inplanes
+        self.alpha = Parameter(torch.ones(inplanes, 1)*alpha)
+        self.alpha.requires_grad_(True)
+        self.inverse = inverse
+
+    def forward(self, x):
+        if self.inverse:
+            fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.range(0, self.length-1))).unsqueeze(1)
+            x = F.pad(x,(0, self.length-1))
+        else :
+            fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.linspace(self.length-1, 0, self.length))).unsqueeze(1)
+            x = F.pad(x,(self.length-1, 0))
+        x = F.conv1d(x, fofe_kernel, bias=None, stride=1, 
+                        padding=0, groups=self.channels)
+        
+        return x
+    def extra_repr(self):
+        return 'inplanes={channels}, length={length}, inverse={inverse}'.format(**self.__dict__)
+
+
+class fofe_bn_conv(nn.Module):
+    def __init__(self, inplanes, planes, kernel, stride, 
+                padding=0, dilation=1, groups=1, bias=False):
+        super(fofe_bn_conv, self).__init__()
+        self.in_conv = bn_conv(inplanes, planes, 1, 1)
+        self.fofe = fofe_flex_all_filter(planes, 0.8, kernel)
+        self.out_conv = bn_conv(planes, planes, 1, 1)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        out = self.in_conv(x)
+        out = self.relu(out)
+        out = self.fofe(out)
+        out = self.out_conv(out)
+        return out
