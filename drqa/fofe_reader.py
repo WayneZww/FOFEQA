@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from .fofe_modules import fofe_conv1d, fofe_linear, fofe_res_att_block, \
         fofe_res_conv_block, fofe_bi_res_block, fofe_depthwise_res_block, \
         fofe_linear_res_block, fofe_linear_res_att_block, fofe_tri_linear_res_block, res_fofe_conv_block
-from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP, FOFENet_Biatt_Selfatt_ASPP
+from .fofe_net import FOFENet, FOFENet_Biatt, FOFENet_Biatt_ASPP, FOFENet_Biatt_Selfatt_ASPP, FOFENet_Biatt_Selfatt
 
 
 class FOFEReader(nn.Module):
@@ -71,6 +71,8 @@ class FOFEReader(nn.Module):
             self.fofe_nn = FOFENet_Biatt(*net_config)
         elif opt['encoder'] == 'fofe_biatt_aspp':
             self.fofe_nn = FOFENet_Biatt_ASPP(*net_config)
+        elif opt['encoder'] == 'fofe_biatt_nonlocal':
+            self.fofe_nn = FOFENet_Biatt_Selfatt(*net_config)
         elif opt['encoder'] == 'fofe_biatt_nonlocal_aspp':
             self.fofe_nn = FOFENet_Biatt_Selfatt_ASPP(*net_config)
         else:

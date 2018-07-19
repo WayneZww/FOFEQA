@@ -242,3 +242,36 @@ class FOFENet_Biatt_Selfatt_ASPP(FOFENet_Biatt_ASPP):
         s_score, e_score = self.output(s_score, e_score, doc_mask)
 
         return s_score, e_score
+
+
+class FOFENet_Biatt_Selfatt(FOFENet_Biatt):
+    def __init__(self,
+                 block,
+                 emb_dims,
+                 channels,
+                 fofe_alpha=0.8,
+                 fofe_max_length=3,
+                 training=True):
+        super(FOFENet_Biatt_Selfatt, self).__init__(
+            block, emb_dims, channels, fofe_alpha, fofe_max_length, training)
+        self.self_attention = SelfAttention(channels * 2)
+        self.output_encoder = self._make_layer(
+            block,
+            channels * 4,
+            channels,
+            3,
+            3,
+            fofe_alpha,
+            fofe_max_length,
+            moduleList=True)
+
+    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
+        q_l_code, d_l_code = self.l_encode(query_emb, doc_emb)
+        d_att, q_att = self.mid_attention(d_l_code, q_l_code)
+        model_code = self.h_encode(q_att, d_att)
+        att_code = self.self_attention(model_code)
+        s_score, e_score = self.out_encode(
+            torch.cat([model_code, att_code], dim=1))
+        s_score, e_score = self.output(s_score, e_score, doc_mask)
+
+        return s_score, e_score
