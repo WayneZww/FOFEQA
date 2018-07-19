@@ -71,8 +71,6 @@ def main():
         epoch_0 = 1
         best_val_score = 0.0
 
-    import pdb;pdb.set_trace()
-
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train

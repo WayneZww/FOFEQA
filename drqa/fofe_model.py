@@ -102,7 +102,6 @@ class DocReaderModel(object):
             inputs = [Variable(e) for e in ex[:7]]
 
         #----------------------------------------------------------------------------
-        #TODO @SED: CHECK THE PREDICTION
         # Run forward
         with torch.no_grad():
             predict_s_idx, predict_e_idx = self.network(*inputs)
@@ -123,8 +122,6 @@ class DocReaderModel(object):
                 s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
                 predictions.append(text[i][s_offset:e_offset])
             except Exception as e:
-                #TODO @SED: CURRENT HAVE PROBLEM OF SOMETIME PREDICTING AN OUT OF BOUND, WHEN BATCHSIZE > 1
-                #           -Suspect that it predict the padding, since we test without training.
                 print("--------------------------------------------------------------")
                 print(e)
                 import pdb;pdb.set_trace()

@@ -46,7 +46,9 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
+        """
         self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
+        """
         # NOTED: current doc_len_limit = 809
         n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -80,10 +82,13 @@ class FOFEReader(nn.Module):
         """
         self.fnn = nn.Sequential(
             nn.Conv1d(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*2),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False)
         )
@@ -91,7 +96,7 @@ class FOFEReader(nn.Module):
     
     #--------------------------------------------------------------------------------
 
-    def rank_tri_select(self, cands_ans_pos, scores, batch_size, rejection_threshold=0.5):
+    def rank_cand_select(self, cands_ans_pos, scores, batch_size, rejection_threshold=0.5):
         n_cands = cands_ans_pos.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
@@ -132,10 +137,8 @@ class FOFEReader(nn.Module):
         n_cands_ans = _doc_fofe.size(1)
 
         # 1. Construct FOFE Doc & Query Inputs Matrix
-        query_fofe = _query_fofe.new_empty(batch_size,n_cands_ans,query_embedding_dim)
-        query_fofe.copy_(_query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim))
-        dq_input = _doc_fofe.new_empty(batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim)
-        dq_input.copy_(torch.cat([_doc_fofe, query_fofe], dim=-1).view([batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim]))
+        query_fofe = _query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim)
+        dq_input = torch.cat([_doc_fofe, query_fofe], dim=-1).view([batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim])
         
         if self.training:
             assert (target_s is not None) and (target_e is not None), "This is supervise learning, must have target during training"
@@ -161,7 +164,7 @@ class FOFEReader(nn.Module):
                 n_neg_samples = sample_num - n_pos_samples
             
             for i in range(target_s.size(0)):
-                # 2. Build Target Scores Matrix.
+                # 2.1.1. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
@@ -173,7 +176,7 @@ class FOFEReader(nn.Module):
                 ans_idx = self.fofe_tricontext_encoder.get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
                 target_score[ans_idx] = 1
                 
-                # 3. Sampling
+                # 2.1.2. Sampling
                 #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
                 #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
                 if n_pos_samples == 1 and sample_num == n_cands_ans:
@@ -188,29 +191,26 @@ class FOFEReader(nn.Module):
                 _samples_idx += currbatch_samples_idx
 
             samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
-            samples_dq_input = dq_input.new_empty(batch_size * sample_num, query_embedding_dim+doc_embedding_dim)
-            samples_dq_input.copy_(dq_input.index_select(0, samples_idx))
-            samples_target_score = target_score.new_empty(batch_size * sample_num, 1)
-            samples_target_score.copy_(target_score.index_select(0, samples_idx))
+            samples_dq_input = dq_input.index_select(0, samples_idx)
+            samples_target_score = target_score.index_select(0, samples_idx)
 
-            # 4. Reshape samples_dq_input and samples_target_score to work on conv1d (instead of linear)
+            # 2.1.3. Reshape samples_dq_input and samples_target_score to work on conv1d (instead of linear)
             samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
             samples_target_score = samples_target_score.transpose(-1,-2).long()
             
             return samples_dq_input, samples_target_score
         else:
-            cands_ans_pos = _cands_ans_pos.new_empty(batch_size*n_cands_ans,_cands_ans_pos.size(-1))
-            cands_ans_pos.copy_(_cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)]))
-
+            # 2.2.1 Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
+            cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
             padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
             
-            # 4. Reshape dq_input to work on conv1d (instead of linear)
+            # 2.2.2. Reshape dq_input to work on conv1d (instead of linear)
             dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
             
             return dq_input, cands_ans_pos, padded_cands_mask
 
     #--------------------------------------------------------------------------------
-
+    """
     def sample(self, doc_emb, query_emb, target_s, target_e):
         doc_emb = doc_emb.transpose(-2,-1)
         forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
@@ -333,7 +333,7 @@ class FOFEReader(nn.Module):
             e_idxs.append(ends[idx.item()].item())
 
         return s_idxs, e_idxs
-    
+    """
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
         # Embed both document and question
         doc_emb = self.embedding(doc)
@@ -382,7 +382,7 @@ class FOFEReader(nn.Module):
             score = score[:,1:,:].squeeze(0).squeeze(0)
             score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
             batch_size = query.size(0)
-            predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score, batch_size)
+            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, score, batch_size)
             return predict_s, predict_e
             #--------------------------------------------------------------------------------
             
