@@ -13,12 +13,10 @@ class BottleNeck(nn.Module):
                 nn.Conv1d(inplanes, planes, 1, 1, bias=False),
                 nn.BatchNorm1d(planes),
             )
-        self.conv1 = nn.Conv1d(inplanes, inplanes//4, 1, 1, bias=False)
-        self.bn1 = nn.BatchNorm1d(inplanes//4)
-        self.conv2 = nn.Conv1d(inplanes//4, inplanes//4, 1, 1, bias=False)
-        self.bn2 = nn.BatchNorm1d(inplanes//4)
-        self.conv3 = nn.Conv1d(inplanes//4, planes, 1, 1, bias=False)
-        self.bn3 = nn.BatchNorm1d(planes)
+        self.conv1 = nn.Conv1d(inplanes, inplanes, 1, 1, bias=False)
+        self.bn1 = nn.BatchNorm1d(inplanes)
+        self.conv2 = nn.Conv1d(inplanes, planes, 1, 1, bias=False)
+        self.bn2 = nn.BatchNorm1d(planes)
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
@@ -30,10 +28,6 @@ class BottleNeck(nn.Module):
 
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.relu(out)
-
-        out = self.conv3(out)
-        out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
@@ -149,19 +143,11 @@ class FOFE_NN(nn.Module):
             nn.BatchNorm1d(hidden_size*2),
             nn.ReLU(inplace=True),
         )
-        self.conv = nn.Conv1d(hidden_size*8, hidden_size*4, 1, 1, bias=False)
-        self.bn = nn.BatchNorm1d(hidden_size*4)
+        self.conv = nn.Conv1d(hidden_size*8, hidden_size*8, 1, 1, bias=False)
+        self.bn = nn.BatchNorm1d(hidden_size*8)
         self.relu = nn.ReLU(inplace=True)
-        self.layer1 = nn.Sequential(
-            nn.Conv1d(hidden_size*4, hidden_size*4, 1, 1, bias=False),
-            nn.BatchNorm1d( hidden_size*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(hidden_size*4, hidden_size*4, 1, 1, bias=False),
-            nn.BatchNorm1d( hidden_size*4),
-            nn.ReLU(inplace=True),
-        )
-#        self.layer1 = BottleNeck(hidden_size*4, hidden_size*4)
-#        self.layer2 = BottleNeck(hidden_size*4, hidden_size*4)
+        self.layer1 = BottleNeck(hidden_size*8, hidden_size*8)
+        self.layer2 = BottleNeck(hidden_size*8, hidden_size*4)
 #        self.layer3 = BottleNeck(hidden_size*4, hidden_size*4)
         self.pointer = nn.Conv1d(hidden_size*4, 2, 1, 1, bias=False)
 #        self.apply(self.weights_init)
