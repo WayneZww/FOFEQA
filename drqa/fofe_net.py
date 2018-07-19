@@ -165,7 +165,7 @@ class FOFE_NN(nn.Module):
         out = self.bn(out)
         out = self.relu(out)
         out = self.layer1(out)
-#        out = self.layer2(out)
+        out = self.layer2(out)
 #        out = self.layer3(out)
         out = self.pointer(out)
         return out
