@@ -78,7 +78,7 @@ class FOFEReader(nn.Module):
             self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Conv1d(doc_input_size*10+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
@@ -217,15 +217,19 @@ class FOFEReader(nn.Module):
             max_len = int(min(self.opt['max_len'], doc_len))
 
         # generate ctx and ans batch
-        l_ctx_batch = []
-        r_ctx_batch = []
+        l_ctx_ex_batch = []
+        r_ctx_ex_batch = []
+        l_ctx_in_batch = []
+        r_ctx_in_batch = []
         ans_batch = []
         mask_batch = []
         starts = []
         ends = []
         for i in range(max_len):
-            l_ctx_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
-            r_ctx_batch.append(inverse_fofe[:, :, -1, 1+i:doc_len+1])
+            l_ctx_ex_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
+            l_ctx_in_batch.append(forward_fofe[:, :, -1, 1+i:doc_len+1])
+            r_ctx_ex_batch.append(inverse_fofe[:, :, -1, 1+i:doc_len+1])
+            r_ctx_in_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
             ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
             if self.training:
                 for j in range(batchsize):
@@ -240,8 +244,10 @@ class FOFEReader(nn.Module):
                 starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
                 ends.append(torch.arange(i, doc_len, device=doc_emb.device))
 
-        l_ctx_batch =torch.cat(l_ctx_batch, dim=-1)
-        r_ctx_batch =torch.cat(r_ctx_batch, dim=-1)
+        l_ctx_in_batch =torch.cat(l_ctx_in_batch, dim=-1)
+        l_ctx_ex_batch =torch.cat(l_ctx_ex_batch, dim=-1)
+        r_ctx_ex_batch =torch.cat(r_ctx_ex_batch, dim=-1)
+        r_ctx_in_batch =torch.cat(r_ctx_in_batch, dim=-1)
         ans_batch = torch.cat(ans_batch, dim=-1)
 
         # generate query batch
@@ -251,16 +257,7 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)  
 
-        # add attention
-        """ql_ctx_batch = l_ctx_batch.mul(query_batch)
-        qr_ctx_batch = r_ctx_batch.mul(query_batch)
-        qans_batch = ans_batch.mul(query_batch)
-        qquery_batch = query_batch.mul(query_batch)
-
-        dq_input = torch.cat([l_ctx_batch, ql_ctx_batch, r_ctx_batch, qr_ctx_batch, \
-                            ans_batch, qans_batch, query_batch, qquery_batch], dim=1)"""
-        #dq_input = torch.cat([l_ctx_batch, ans_batch, r_ctx_batch, query_batch], dim=1)
-        dq_input = [l_ctx_batch, ans_batch, r_ctx_batch, query_batch]
+        dq_input = torch.cat([l_ctx_in_batch, l_ctx_ex_batch, ans_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
 
         if self.training:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()

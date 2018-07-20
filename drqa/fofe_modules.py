@@ -411,7 +411,7 @@ class fofe_encoder_dual(nn.Module):
     def forward(self, x):
         forward_fofe, inverse_fofe = self.fofe(x)
         return forward_fofe, inverse_fofe
-        
+
 
 class fofe_encoder_conv(fofe_encoder):
     def __init__(self, inplanes, planes, fofe_alpha, fofe_max_length):
@@ -451,7 +451,7 @@ class fofe_flex_all_encoder(nn.Module):
                 fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.range(0, i-1))).unsqueeze(1)
                 out.append(F.conv1d(F.pad(x,(0, i), fofe_kernel, bias=None, stride=1, 
                                 padding=0, groups=self.channels).unsqueeze(-2))
-            else :
+            else:
                 fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.linspace(i-1, 0, i))).unsqueeze(1)
                 out.append(F.conv1d(F.pad(x,(i, 0)), fofe_kernel, bias=None, stride=1, 
                                 padding=0, groups=self.channels).unsqueeze(-2))
