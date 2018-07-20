@@ -66,6 +66,8 @@ class FOFEReader(nn.Module):
                                                                     has_lr_ctx_cand_incl=opt['contexts_incl_cand'],
                                                                     has_lr_ctx_cand_excl=opt['contexts_excl_cand']))
             self.query_fofe_encoder.append(fofe(opt['embedding_dim'], fofe_alpha))
+        self.doc_fofe_tricontext_encoder = nn.ModuleList(self.doc_fofe_tricontext_encoder)
+        self.query_fofe_encoder = nn.ModuleList(self.query_fofe_encoder)
         
         # Input size to fofe_fnn: (doc_fofe_input * n_ctx_types + query_fofe_input) * n_fofe_alphas
         fnn_input_size = (doc_input_size * n_ctx_types + opt['embedding_dim']) * len(fofe_alphas)
@@ -96,10 +98,10 @@ class FOFEReader(nn.Module):
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*2),
+            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+            nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False)
+            nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False)
         )
         self.count=0
     
@@ -139,20 +141,19 @@ class FOFEReader(nn.Module):
         query_embedding_dim = query_emb.size(-1)
         doc_embedding_dim = 0
         n_cands_ans = 0
-        query_fofes = []
-        doc_fofes = []
+        dq_fofes = []
 
         # 1. Construct FOFE Doc & Query Inputs Matrix
-        for i in range(n_fofe_alphas):
-            _doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder[i](doc_emb, doc_mask)
+        for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
+            _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask)
             doc_embedding_dim = _doc_fofe.size(-1)
             n_cands_ans = _doc_fofe.size(1)
-            _query_fofe = self.query_fofe_encoder[i](query_emb, query_mask)\
-                                .unsqueeze(1)\
-                                .expand(batch_size,n_cands_ans,query_embedding_dim)
-            doc_fofes.append(_doc_fofe)
-            query_fofes.append(_query_fofe)
-        dq_fofes = doc_fofes + query_fofes
+            dq_fofes.append(_doc_fofe)
+        for q_fofe_encoder in self.query_fofe_encoder:
+            _query_fofe = q_fofe_encoder(query_emb, query_mask)\
+                            .unsqueeze(1)\
+                            .expand(batch_size,n_cands_ans,query_embedding_dim)
+            dq_fofes.append(_query_fofe)
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 

@@ -18,7 +18,7 @@ from drqa.utils import str2bool
 def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
-    train, train_y, dev, dev_y, embedding, opt = load_data(vars(args))
+    train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -89,20 +89,18 @@ def main():
             break
 
         # eval train set
-        batches_exclude_target = BatchGen(train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
+        batches_exclude_target = BatchGen(sample_train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
         train_predictions = []
-        quarter_epochs = (epoch_0 + args.epochs) // 4
-        if epoch % quarter_epochs == 0:
-            for i, batch in enumerate(batches_exclude_target):
-                train_predictions.extend(model.predict(batch))
-                log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
-            em, f1 = score(train_predictions, train_y)
-            log.warning("train EM: {} F1: {}".format(em, f1))
-            if em < 0.1:
-                log.warning('DEBUG: EM score below threshold, \
-                             hence outputing the prediction and target for debugging:\n\
-                             train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, train_y))
-            log.debug('\n')
+        for i, batch in enumerate(batches_exclude_target):
+            train_predictions.extend(model.predict(batch))
+            log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
+        em, f1 = score(train_predictions, sample_train_y)
+        log.warning("train EM: {} F1: {}".format(em, f1))
+        if em < 0.1:
+            log.warning('DEBUG: EM score below threshold, \
+                         hence outputing the prediction and target for debugging:\n\
+                         train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, sample_train_y))
+        log.debug('\n')
 
         # eval dev set
         batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
@@ -145,6 +143,9 @@ def setup():
                         const=True, default=torch.cuda.is_available(),
                         help='whether to use GPU acceleration.')
     # training
+    parser.add_argument('--test_train', action='store_true',
+                        help='whether use train set as dev set for debug; \
+                        NOTED: CURRENTLY NOT IN USE ON SED VER.')
     parser.add_argument('--test_only', action='store_true',
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
@@ -265,10 +266,15 @@ def load_data(opt):
     data['train'].sort(key=lambda x: len(x[1]))
     train = [x[:-3]+x[-2:] for x in data['train']]
     train_y = [[x[-3]] for x in data['train']]
+
+    sample_idx = range(1, len(train), 10)
+    sample_train = [train[i] for i in sample_idx]
+    sample_train_y = [train_y[i] for i in sample_idx]
+
     data['dev'].sort(key=lambda x: len(x[1]))
     dev = [x[:-1] for x in data['dev']]
     dev_y = [x[-1] for x in data['dev']]
-    return train, train_y, dev, dev_y, embedding, opt
+    return train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt
     # ---------------------------------------------------------------------------------
 
 
