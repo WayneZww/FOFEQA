@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_dual_linear as fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_linear_tricontext
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
@@ -57,7 +57,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder_dual(doc_input_size, opt['fofe_alpha']-0.4, opt['fofe_alpha'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder_dual(doc_input_size, opt['fofe_alpha_l'], opt['fofe_alpha_h'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -71,36 +71,31 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'],  opt['hidden_size'], opt['fofe_alpha']-0.4, opt['fofe_alpha'])
+        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'], opt['fofe_alpha_l'], opt['fofe_alpha_h'])
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
             self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
+        elif opt['net_arch'] == 'simple':
+            self.fnn = nn.Sequential(
+                nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.ReLU(inplace=True),
+                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.ReLU(inplace=True),
+                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*2),
+                nn.ReLU(inplace=True),
+                nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
+            )
         else:
             raise Exception('Architecture undefined!')
-        """
-        self.fnn = nn.Sequential(
-            nn.Linear(doc_input_size*3+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*4, opt['hidden_size']*2, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(opt['hidden_size']*2, 1, bias=False),
-            nn.Sigmoid()
-        )
         
-        self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*4),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
-            nn.BatchNorm1d( opt['hidden_size']*2),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
-        )"""
-        self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
+        if opt['focal_alpha'] != 0:
+            self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
+        else:
+            self.fl_loss = None
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
         print(self) 
@@ -327,9 +322,11 @@ class FOFEReader(nn.Module):
             dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             scores = self.fnn(dq_input)
-            fl_loss = self.fl_loss(scores, target_score)
-            ce_loss = self.ce_loss(scores, target_score)
-            loss = fl_loss + ce_loss
+            loss = self.ce_loss(scores, target_score)
+            if self.fl_loss is not None:
+                fl_loss = self.fl_loss(scores, target_score)
+                loss += fl_loss
+ 
             return loss
         else :
 			# import pdb;pdb.set_trace()
