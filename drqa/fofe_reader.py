@@ -6,7 +6,7 @@ import random
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import fofe_conv1d, fofe, fofe_block, fofe_res_block, fofe_encoder, fofe_linear_tricontext
+from .fofe_modules import fofe_conv1d, fofe, fofe_block, fofe_res_block, fofe_encoder, fofe_tricontext
 from .fofe_net import FOFENet, FOFE_NN
 from .utils import tri_num
 
@@ -39,30 +39,39 @@ class FOFEReader(nn.Module):
                                           opt['embedding_dim'],
                                           padding_idx=padding_idx)
 
-        # Input size to FOFE_NN: word emb + question emb + manual features
-        doc_input_size = opt['embedding_dim'] + opt['num_features']
+        #----------------------------------------------------------------------------
+        # Input size to doc_fofe_encoder: word_emb + manual_features
+        doc_input_size = opt['embedding_dim']+opt['num_features']
         if opt['pos']:
             doc_input_size += opt['pos_size']
         if opt['ner']:
             doc_input_size += opt['ner_size']
-        #----------------------------------------------------------------------------
-        """
-        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
-        """
-        # NOTED: current doc_len_limit = 809
+        
         n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
             n_ctx_types += 2
         if (self.opt['contexts_excl_cand']):
             n_ctx_types += 2
-        self.fofe_tricontext_encoder = fofe_linear_tricontext(doc_input_size,
-                                                              opt['fofe_alpha'],
-                                                              cand_len_limit=self.opt['max_len'],
-                                                              doc_len_limit=809,
-                                                              has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
-                                                              has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])
-        self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'])
+
+        fofe_alphas = opt['fofe_alpha'].split(',')
+        self.doc_fofe_tricontext_encoder = []
+        self.query_fofe_encoder = []
+        for _, alpha in enumerate(fofe_alphas):
+            fofe_alpha = float(alpha)
+            doc_len_limit = 809
+            self.doc_fofe_tricontext_encoder.append(fofe_tricontext(doc_input_size,
+                                                                    fofe_alpha,
+                                                                    cand_len_limit=self.opt['max_len'],
+                                                                    doc_len_limit=doc_len_limit,
+                                                                    has_lr_ctx_cand_incl=opt['contexts_incl_cand'],
+                                                                    has_lr_ctx_cand_excl=opt['contexts_excl_cand']))
+            self.query_fofe_encoder.append(fofe(opt['embedding_dim'], fofe_alpha))
+        
+        # Input size to fofe_fnn: (doc_fofe_input * n_ctx_types + query_fofe_input) * n_fofe_alphas
+        fnn_input_size = (doc_input_size * n_ctx_types + opt['embedding_dim']) * len(fofe_alphas)
         """
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'], opt['fofe_max_length'])
+
         self.fnn = nn.Sequential(
             nn.Linear(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, bias=False),
             nn.ReLU(inplace=True),
@@ -81,7 +90,7 @@ class FOFEReader(nn.Module):
         )
         """
         self.fnn = nn.Sequential(
-            nn.Conv1d(doc_input_size*n_ctx_types+opt['embedding_dim'], opt['hidden_size']*4, 1, 1, bias=False),
+            nn.Conv1d(fnn_input_size, opt['hidden_size']*4, 1, 1, bias=False),
             nn.BatchNorm1d( opt['hidden_size']*4),
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
@@ -124,22 +133,29 @@ class FOFEReader(nn.Module):
             predict_e.append(_predict_e)
         return predict_s, predict_e
 
-
-
     def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None):
-        #TODO @SED: REMOVE REDUNDANT COPYING.
-        _query_fofe = self.fofe_linear(query_emb, query_mask)
-        _doc_fofe, _cands_ans_pos, _padded_cands_mask = self.fofe_tricontext_encoder(doc_emb, doc_mask)
-
-        batch_size = _query_fofe.size(0)
-        query_embedding_dim = _query_fofe.size(-1)
-        doc_embedding_dim = _doc_fofe.size(-1)
-        n_cands_ans = _doc_fofe.size(1)
+        n_fofe_alphas = len(self.opt['fofe_alpha'].split(','))
+        batch_size = query_emb.size(0)
+        query_embedding_dim = query_emb.size(-1)
+        doc_embedding_dim = 0
+        n_cands_ans = 0
+        query_fofes = []
+        doc_fofes = []
 
         # 1. Construct FOFE Doc & Query Inputs Matrix
-        query_fofe = _query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim)
-        dq_input = torch.cat([_doc_fofe, query_fofe], dim=-1).view([batch_size*n_cands_ans,query_embedding_dim+doc_embedding_dim])
-        
+        for i in range(n_fofe_alphas):
+            _doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder[i](doc_emb, doc_mask)
+            doc_embedding_dim = _doc_fofe.size(-1)
+            n_cands_ans = _doc_fofe.size(1)
+            _query_fofe = self.query_fofe_encoder[i](query_emb, query_mask)\
+                                .unsqueeze(1)\
+                                .expand(batch_size,n_cands_ans,query_embedding_dim)
+            doc_fofes.append(_doc_fofe)
+            query_fofes.append(_query_fofe)
+        dq_fofes = doc_fofes + query_fofes
+        dq_input = torch.cat(dq_fofes, dim=-1)\
+                    .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
+
         if self.training:
             assert (target_s is not None) and (target_e is not None), "This is supervise learning, must have target during training"
             target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
@@ -168,12 +184,16 @@ class FOFEReader(nn.Module):
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
-                doc_len = min(doc_emb.size(1), self.fofe_tricontext_encoder.doc_len_limit)
-                max_cand_len = self.fofe_tricontext_encoder.cand_len_limit
+                doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder[0].doc_len_limit)
+                max_cand_len = self.doc_fofe_tricontext_encoder[0].cand_len_limit
                 
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
-                ans_idx = self.fofe_tricontext_encoder.get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
+                ans_idx = self.doc_fofe_tricontext_encoder[0].get_sample_idx(ans_s,
+                                                                             ans_span,
+                                                                             doc_len,
+                                                                             max_cand_len,
+                                                                             currbatch_base_idx)
                 target_score[ans_idx] = 1
                 
                 # 2.1.2. Sampling

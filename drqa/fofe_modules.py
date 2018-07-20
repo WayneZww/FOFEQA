@@ -142,9 +142,9 @@ class fofe_res_block(nn.Module):
 
 
 #--------------------------------------------------------------------------------<<
-class fofe_linear_tricontext(nn.Module):
+class fofe_tricontext(nn.Module):
     def __init__(self, embedding_dim,  alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True):
-        super(fofe_linear_tricontext, self).__init__()
+        super(fofe_tricontext, self).__init__()
         self.alpha = alpha
         self.cand_len_limit = cand_len_limit
         self.has_lr_ctx_cand_incl = has_lr_ctx_cand_incl
