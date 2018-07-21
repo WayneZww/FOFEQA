@@ -103,8 +103,6 @@ class FOFEReader(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False)
         )
-        self.count=0
-    
     #--------------------------------------------------------------------------------
 
     def rank_cand_select(self, cands_ans_pos, scores, batch_size, rejection_threshold=0.5):

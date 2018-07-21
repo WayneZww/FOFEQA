@@ -56,12 +56,22 @@ class DocReaderModel(object):
     def build_optimizer(self):
         parameters = [p for p in self.network.parameters() if p.requires_grad]
         if self.opt['optimizer'] == 'sgd':
-            self.optimizer = optim.SGD(parameters, self.opt['learning_rate'],
+            self.optimizer = optim.SGD(parameters,
+                                       self.opt['learning_rate'],
                                        momentum=self.opt['momentum'],
                                        weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adamax':
             self.optimizer = optim.Adamax(parameters,
+                                          self.opt['learning_rate'],
                                           weight_decay=self.opt['weight_decay'])
+        elif self.opt['optimizer'] == 'adadelta':
+            self.optimizer = optim.Adadelta(parameters,
+                                           self.opt['learning_rate'],
+                                           weight_decay=self.opt['weight_decay'])
+        elif self.opt['optimizer'] == 'adagrad':
+            self.optimizer = optim.Adagrad(parameters,
+                                           self.opt['learning_rate'],
+                                           weight_decay=self.opt['weight_decay'])
         else:
             raise RuntimeError('Unsupported optimizer: %s' % self.opt['optimizer'])
         if self.opt_state_dict:

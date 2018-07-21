@@ -18,7 +18,12 @@ from drqa.utils import str2bool
 def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
-    train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
+    # ---------------------------------------------------------------------------------
+    if args.test_train:
+        train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
+    else:
+        train, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
+    # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -38,30 +43,12 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
-        
-        # eval train set
-        batches_exclude_target = BatchGen(train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        train_predictions = []
-        for i, batch in enumerate(batches_exclude_target):
-            train_predictions.extend(model.predict(batch))
-            log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
-        em, f1 = score(train_predictions, train_y)
-        log.warning("train EM: {} F1: {}".format(em, f1))
-        if em < 0.1:
-            log.warning('DEBUG: EM score below threshold, \
-                        hence outputing the prediction and target for debugging:\n\
-                        train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, train_y))
-        log.debug('\n')
+            
+        # Test  dev and total train
+        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
+        train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
 
-        # eval dev set
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        predictions = []
-        for i, batch in enumerate(batches):
-            predictions.extend(model.predict(batch))
-            log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
-        em, f1 = score(predictions, dev_y)
-        log.info("[dev EM: {} F1: {}]".format(em, f1))
-        if math.fabs(em - checkpoint['em']) > 1e-3 or math.fabs(f1 - checkpoint['f1']) > 1e-3:
+        if math.fabs(dev_em - checkpoint['em']) > 1e-3 or math.fabs(dev_f1 - checkpoint['f1']) > 1e-3:
             log.info('Inconsistent: recorded EM: {} F1: {}'.format(checkpoint['em'], checkpoint['f1']))
             log.error('Error loading model: current code is inconsistent with code used to train the previous model.')
             exit(1)
@@ -75,51 +62,32 @@ def main():
         log.warning('Epoch {}'.format(epoch))
         # train
         if not args.test_only:
-            batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
-            start = datetime.now()
-            for i, batch in enumerate(batches):
-                model.update(batch)
-                if i % args.log_per_updates == 0:
-                    log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                        epoch, model.updates, model.train_loss.value,
-                        str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-            log.debug('\n')
-
+            train_process(train, epoch, args, model, log)
+        # eval
         if args.test_only and args.resume:
-            break
+            break 
+        
+        # Test on Dev Set
+        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
+        # Test on sampled train set
+        sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
+        # Test on total Train Set
+        if args.test_train and epoch % 10 == 0:
+            train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
 
-        # eval train set
-        batches_exclude_target = BatchGen(sample_train, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        train_predictions = []
-        for i, batch in enumerate(batches_exclude_target):
-            train_predictions.extend(model.predict(batch))
-            log.debug('> evaluating train set [{}/{}]'.format(i, len(batches_exclude_target)))
-        em, f1 = score(train_predictions, sample_train_y)
-        log.warning("train EM: {} F1: {}".format(em, f1))
-        if em < 0.1:
-            log.warning('DEBUG: EM score below threshold, \
-                         hence outputing the prediction and target for debugging:\n\
-                         train_predictions:{}\ntrain_y:{}\n'.format(train_predictions, sample_train_y))
-        log.debug('\n')
-
-        # eval dev set
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        predictions = []
-        for i, batch in enumerate(batches):
-            predictions.extend(model.predict(batch))
-            log.debug('> evaluating dev set [{}/{}]'.format(i, len(batches)))
-        em, f1 = score(predictions, dev_y)
-        log.warning("dev EM: {} F1: {}".format(em, f1))
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
-            model.save(model_file, epoch, [em, f1, best_val_score])
+            model.save(model_file, epoch, [dev_em, dev_f1, best_val_score])
             if f1 > best_val_score:
                 best_val_score = f1
                 copyfile(
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
                 log.info('[new best model saved.]')
+
+        if args.test_only:
+            break
 
 
 def setup():
@@ -144,8 +112,7 @@ def setup():
                         help='whether to use GPU acceleration.')
     # training
     parser.add_argument('--test_train', action='store_true',
-                        help='whether use train set as dev set for debug; \
-                        NOTED: CURRENTLY NOT IN USE ON SED VER.')
+                        help='whether use train set as dev set for debug')
     parser.add_argument('--test_only', action='store_true',
                         help='whether test onlys')
     parser.add_argument('-e', '--epochs', type=int, default=40)
@@ -155,7 +122,7 @@ def setup():
                         if sn = 0 and nr = 0, will will ignore sampling; \
                         if sn = 0 and nr > 0, will will duplicate up positive sample to match 1-nr ratio.')
     parser.add_argument('-nr', '--neg_ratio', type=float, default=1/2,
-                        help='ratio of negtive sample for each doc; ')
+                        help='ratio of negtive sample for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
                              'e.g. "checkpoint_epoch_11.pt"')
@@ -164,11 +131,10 @@ def setup():
     parser.add_argument('-rlr', '--reduce_lr', type=float, default=0.,
                         help='reduce initial (resumed) learning rate by this factor.')
     parser.add_argument('-op', '--optimizer', default='adamax',
-                        help='supported optimizer: adamax, sgd')
+                        help='supported optimizer: adamax, sgd, adadelta, adagrad.')
     parser.add_argument('-gc', '--grad_clipping', type=float, default=10)
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
-    parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
-                        help='only applied to SGD.')
+    parser.add_argument('-lr', '--learning_rate', type=float, default=0.1)
     parser.add_argument('-mm', '--momentum', type=float, default=0,
                         help='only applied to SGD.')
     parser.add_argument('-tp', '--tune_partial', type=int, default=1000,
@@ -196,7 +162,13 @@ def setup():
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', type=str, default='0.8',
                         help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
+    #parser.add_argument('--fofe_alpha_l', type=float, default=0.4)
+    #parser.add_argument('--fofe_alpha_h', type=float, default=0.8)
     parser.add_argument('--fofe_max_length', type=int, default=64)
+    parser.add_argument('--focal_alpha', type=float, default=0.25)
+    parser.add_argument('--focal_gamma', type=int, default=2)
+    parser.add_argument('--net_arch', default='FOFE_NN',
+                        help='Architecture for NN')
 
     args = parser.parse_args()
 
@@ -250,7 +222,7 @@ def lr_decay(optimizer, lr_decay):
 
 
 def load_data(opt):
-    with open('./data/SQuAD/meta.msgpack', 'rb') as f:
+    with open(opt['meta_file'], 'rb') as f:
         meta = msgpack.load(f, encoding='utf8')
     embedding = torch.Tensor(meta['embedding'])
     opt['pretrained_words'] = True
@@ -262,28 +234,70 @@ def load_data(opt):
     BatchGen.ner_size = opt['ner_size']
     with open(opt['data_file'], 'rb') as f:
         data = msgpack.load(f, encoding='utf8')
-    # ---------------------------------------------------------------------------------
+    
+    data['dev'].sort(key=lambda x: len(x[1]))
+    dev = [x[:-1] for x in data['dev']]
+    dev_y = [x[-1] for x in data['dev']]
+
     data['train'].sort(key=lambda x: len(x[1]))
-    train = [x[:-3]+x[-2:] for x in data['train']]
+    train = [x[:] for x in data['train']]
     train_y = [[x[-3]] for x in data['train']]
 
+    #sample data to test train for each epoch
     sample_idx = range(1, len(train), 10)
     sample_train = [train[i] for i in sample_idx]
     sample_train_y = [train_y[i] for i in sample_idx]
 
-    data['dev'].sort(key=lambda x: len(x[1]))
-    dev = [x[:-1] for x in data['dev']]
-    dev_y = [x[-1] for x in data['dev']]
-    return train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt
-    # ---------------------------------------------------------------------------------
+    if opt['test_train']:
+        return train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt
+    else: 
+        return train, dev, dev_y, sample_train, sample_train_y, embedding, opt
 
+
+def train_process(train, epoch, args, model, log):
+    batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
+    start = datetime.now()
+    for i, batch in enumerate(batches):
+        model.update(batch)
+        if i % args.log_per_updates == 0:
+            log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
+                epoch, model.updates, model.train_loss.value,
+                str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+    log.debug('\n')
+
+
+def test_process(dev, dev_y, args, model, log, mode='dev'):
+    test_train=True
+    if mode == 'dev':
+        log.warning("Evaluating dev set:")
+        test_train=False
+    elif mode == 'train':
+        log.warning("Evaluating total train set:")
+    elif mode == 'sample_train':
+        log.warning("Evaluating sampled train set:") 
+
+    batches = BatchGen(dev, args.batch_size, test_train=test_train, evaluation=True, gpu=args.cuda)
+    predictions = []
+    for i, batch in enumerate(batches):
+        predictions.extend(model.predict(batch))
+        log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
+    em, f1 = score(predictions, dev_y)
+
+    if mode == 'dev':
+        log.warning("Dev EM: {} F1: {}".format(em, f1))
+    elif mode == 'train':
+        log.warning("Train EM: {} F1: {}".format(em, f1))
+    elif mode == 'sample_train':
+        log.warning("Sampled train EM: {} F1: {}".format(em, f1))
+
+    return em, f1
 
 
 class BatchGen:
     pos_size = None
     ner_size = None
 
-    def __init__(self, data, batch_size, gpu, evaluation=False):
+    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False):
         """
         input:
             data - list of lists
@@ -292,6 +306,7 @@ class BatchGen:
         self.batch_size = batch_size
         self.eval = evaluation
         self.gpu = gpu
+        self.test_train = test_train
 
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
@@ -312,13 +327,11 @@ class BatchGen:
         for batch in self.data:
             batch_size = len(batch)
             batch = list(zip(*batch))
-            if self.eval:
-                # if self.eval and len(batch) == 10, then this is a training set eval (so remove last 2 target cols)
-                if len(batch) == 10:
-                    batch = batch[:-2]
+
+            if self.eval and not self.test_train:
                 assert len(batch) == 8
             else:
-                assert len(batch) == 10
+                assert len(batch) == 11
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -352,8 +365,8 @@ class BatchGen:
             text = list(batch[6])
             span = list(batch[7])
             if not self.eval:
-                y_s = torch.LongTensor(batch[8])
-                y_e = torch.LongTensor(batch[9])
+                y_s = torch.LongTensor(batch[-2])
+                y_e = torch.LongTensor(batch[-1])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
@@ -429,3 +442,4 @@ def score(pred, truth):
 
 if __name__ == '__main__':
     main()
+

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA_SED"
 now=$(date +"%Y%b%d_%Hh%Mm%Ss")
-data_root="$work_dir/data/"
-ver_n_opt="v3_opt6"
+data_dir="/local/scratch/FOFEQA/data/SQuAD"
+ver_n_opt="v4_opt5"
 
-gpu_id=0
+gpu_id=1
 epoch_num=100
-batch_size=8
+batch_size=4
 sample_num=0
 neg_ratio=0
-hidden_size=1024
+hidden_size=512
+learning_rate=1.0
 max_cand_len=16
 fofe_alpha="0.4,0.8"
 ctx_incl_cand=True
@@ -29,16 +30,20 @@ mkdir -p ${models_n_logs_dir}
 
 CUDA_VISIBLE_DEVICES=${gpu_id} \
 python -u train_fofe.py --model_dir ${models_n_logs_dir} \
+                --data_file ${data_dir}/data-test.msgpack \
+                --meta_file ${data_dir}/meta-test.msgpack \
+                --test_train \
                 --tune_partial 1000 \
                 --epochs ${epoch_num} \
                 --batch_size ${batch_size} \
                 --sample_num ${sample_num} \
                 --neg_ratio ${neg_ratio} \
-                --hidden_size ${} \
+                --hidden_size ${hidden_size} \
                 --max_len ${max_cand_len} \
                 --fofe_alpha ${fofe_alpha} \
-                --pos False \
-                --ner False \
+                --pos True \
+                --ner True \
                 --contexts_incl_cand ${ctx_incl_cand} \
                 --contexts_excl_cand ${ctx_excl_cand} \
-                --optimizer adamax
+                --optimizer adadelta \
+                --learning_rate ${learning_rate}
