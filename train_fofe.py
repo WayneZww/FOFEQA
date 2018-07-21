@@ -184,7 +184,7 @@ def setup():
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
-    parser.add_argument('--net_arch', default='FOFE_NN',
+    parser.add_argument('--net_arch', default='simple',
                         help='Architecture for NN')
 
     args = parser.parse_args()
