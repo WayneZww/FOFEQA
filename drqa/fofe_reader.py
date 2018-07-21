@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_dual, fofe_encoder_dual
+from .fofe_modules import fofe, fofe_encoder
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
@@ -57,7 +57,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder_dual(doc_input_size, opt['fofe_alpha_l'], opt['fofe_alpha_h'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha_h'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -71,23 +71,23 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_dual(opt['embedding_dim'], opt['fofe_alpha_l'], opt['fofe_alpha_h'])
+        self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha_h'])
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
             self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d(doc_input_size*6+opt['embedding_dim']*2, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Conv1d(doc_input_size*3+opt['embedding_dim']*1, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-                nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
-                nn.Dropout(0.1),
+#                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+#                nn.BatchNorm1d( opt['hidden_size']*4),
+#                nn.ReLU(inplace=True),
+#                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
         else:
