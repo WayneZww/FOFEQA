@@ -143,7 +143,8 @@ class fofe(nn.Module):
         length = x.size(-2)
         matrix = x.new_empty(x.size(0),1,length)
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-        fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
+        mask = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        fofe_code = torch.bmm(matrix,x).transpose(-1,-2).mul(mask.unsqueeze(-1))
         return fofe_code
     
     def extra_repr(self):
