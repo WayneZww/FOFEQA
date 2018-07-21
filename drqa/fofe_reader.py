@@ -87,7 +87,7 @@ class FOFEReader(nn.Module):
 #                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
 #                nn.BatchNorm1d( opt['hidden_size']*4),
 #                nn.ReLU(inplace=True),
-#                nn.Dropout(0.1),
+                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
         else:
