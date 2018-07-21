@@ -111,7 +111,6 @@ class DocReaderModel(object):
         else:
             inputs = [Variable(e) for e in ex[:7]]
 
-        #----------------------------------------------------------------------------
         # Run forward
         with torch.no_grad():
             predict_s_idx, predict_e_idx = self.network(*inputs)
@@ -121,27 +120,15 @@ class DocReaderModel(object):
         spans = ex[-1]
         predictions = []
         for i in range(len(predict_s_idx)):
-            try:
-                s_idx = predict_s_idx[i]
-                e_idx = predict_e_idx[i]
-                #if s_idx < 0 or e_idx < 0:
-                #    predictions.append("<UNK>")
-                #else:
-                #    s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-                #    predictions.append(text[i][s_offset:e_offset])
-                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-                predictions.append(text[i][s_offset:e_offset])
-            except Exception as e:
-                print("--------------------------------------------------------------")
-                print(e)
-                import pdb;pdb.set_trace()
-                print("s_idx:", s_idx)
-                print("e_idx:", e_idx)
-                print("spans[i]:", spans[i])
-                print("spans:", spans)
-                print("text", text)
-                predictions.append("<PAD>")
-        #----------------------------------------------------------------------------
+            s_idx = predict_s_idx[i]
+            e_idx = predict_e_idx[i]
+            #if s_idx < 0 or e_idx < 0:
+            #    predictions.append("<UNK>")
+            #else:
+            #    s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            #    predictions.append(text[i][s_offset:e_offset])
+            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            predictions.append(text[i][s_offset:e_offset])
         return predictions
 
     def save(self, filename, epoch, scores):
