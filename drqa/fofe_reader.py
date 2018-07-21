@@ -57,7 +57,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha_h'],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_encoder(doc_input_size, opt['fofe_alpha'][1],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -71,7 +71,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha_h'])
+        self.fofe_linear = fofe(opt['embedding_dim'], opt['fofe_alpha'][1])
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':

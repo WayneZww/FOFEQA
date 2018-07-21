@@ -20,9 +20,9 @@ def main():
     log.info('[Program starts. Loading data...]')
     # ---------------------------------------------------------------------------------
     if args.test_train:
-        train, train_y, dev, dev_y, embedding, opt = load_data(vars(args))
+        train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     else:
-        train, dev, dev_y, embedding, opt = load_data(vars(args))
+        train, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     # ---------------------------------------------------------------------------------
     log.info(opt)
     log.info('[Data loaded.]')
@@ -43,14 +43,12 @@ def main():
         if args.reduce_lr:
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        predictions = []
-        for i, batch in enumerate(batches):
-            predictions.extend(model.predict(batch))
-            log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
-        em, f1 = score(predictions, dev_y)
-        log.info("[dev EM: {} F1: {}]".format(em, f1))
-        if math.fabs(em - checkpoint['em']) > 1e-3 or math.fabs(f1 - checkpoint['f1']) > 1e-3:
+            
+        # Test  dev and total train
+        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
+        train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
+
+        if math.fabs(dev_em - checkpoint['em']) > 1e-3 or math.fabs(dev_f1 - checkpoint['f1']) > 1e-3:
             log.info('Inconsistent: recorded EM: {} F1: {}'.format(checkpoint['em'], checkpoint['f1']))
             log.error('Error loading model: current code is inconsistent with code used to train the previous model.')
             exit(1)
@@ -64,41 +62,25 @@ def main():
         log.warning('Epoch {}'.format(epoch))
         # train
         if not args.test_only:
-            batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
-            start = datetime.now()
-            for i, batch in enumerate(batches):
-                model.update(batch)
-                if i % args.log_per_updates == 0:
-                    log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
-                        epoch, model.updates, model.train_loss.value,
-                        str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-            log.debug('\n')
+            train_process(train, epoch, args, model, log)
         # eval
         if args.test_only and args.resume:
             break 
         
-        batches = BatchGen(dev, batch_size=args.batch_size, evaluation=True, gpu=args.cuda)
-        predictions = []
-        for i, batch in enumerate(batches):
-            predictions.extend(model.predict(batch))
-            log.debug('> evaluating dev set [{}/{}]'.format(i, len(batches)))
-        em, f1 = score(predictions, dev_y)
-        log.warning("dev EM: {} F1: {}".format(em, f1))
-
+        # Test on Dev Set
+        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
+        # Test on sampled train set
+        sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
+        # Test on total Train Set
         if args.test_train and epoch % 10 == 0:
-            batches = BatchGen(train, batch_size=args.batch_size, test_train=args.test_train, evaluation=True, gpu=args.cuda)
-            predictions = []
-            for i, batch in enumerate(batches):
-                predictions.extend(model.predict(batch))
-                log.debug('> evaluating train set [{}/{}]'.format(i, len(batches)))
-            em, f1 = score(predictions, train_y)
-            log.warning("train EM: {} F1: {}".format(em, f1))
+            train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
+
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
-            model.save(model_file, epoch, [em, f1, best_val_score])
-            if f1 > best_val_score:
-                best_val_score = f1
+            model.save(model_file, epoch, [dev_em, dev_f1, best_val_score])
+            if dev_f1 > best_val_score:
+                best_val_score = dev_f1
                 copyfile(
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
@@ -136,7 +118,9 @@ def setup():
     parser.add_argument('-e', '--epochs', type=int, default=40)
     parser.add_argument('-bs', '--batch_size', type=int, default=2)
     parser.add_argument('-sn', '--sample_num', type=int, default=256,
-                        help='sampling numbers for each doc')
+                        help='sampling numbers for each doc; \
+                        if sn = 0 and nr = 0, will will ignore sampling; \
+                        if sn = 0 and nr > 0, will will duplicate up positive sample to match 1-nr ratio.')
     parser.add_argument('-nr', '--neg_ratio', type=float, default=1/2,
                         help='ratio of negtive sample for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
@@ -162,12 +146,10 @@ def setup():
                         help='perform rnn padding (much slower but more accurate).')
 
     # model
-    # ---------------------------------------------------------------------------------
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that include Candidates')
     parser.add_argument('--contexts_excl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that exclude Candidates')
-    # ---------------------------------------------------------------------------------
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)
     parser.add_argument('--question_layers', type=int, default=3)
@@ -179,12 +161,14 @@ def setup():
                         help='use named entity tags as a feature.')
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
-    parser.add_argument('--fofe_alpha_l', type=float, default=0.4)
-    parser.add_argument('--fofe_alpha_h', type=float, default=0.8)
+    parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
+                        help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
+    #parser.add_argument('--fofe_alpha_l', type=float, default=0.4)
+    #parser.add_argument('--fofe_alpha_h', type=float, default=0.8)
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
-    parser.add_argument('--net_arch', default='simple',
+    parser.add_argument('--net_arch', default='FOFE_NN',
                         help='Architecture for NN')
 
     args = parser.parse_args()
@@ -255,14 +239,59 @@ def load_data(opt):
     data['dev'].sort(key=lambda x: len(x[1]))
     dev = [x[:-1] for x in data['dev']]
     dev_y = [x[-1] for x in data['dev']]
+
+    data['train'].sort(key=lambda x: len(x[1]))
+    train = [x[:] for x in data['train']]
+    train_y = [[x[-3]] for x in data['train']]
+
+    #sample data to test train for each epoch
+    sample_idx = range(1, len(train), 10)
+    sample_train = [train[i] for i in sample_idx]
+    sample_train_y = [train_y[i] for i in sample_idx]
+
     if opt['test_train']:
-        data['train'].sort(key=lambda x: len(x[1]))
-        train = [x[:] for x in data['train']]
-        train_y = [[x[-3]] for x in data['train']]
-        return train, train_y, dev, dev_y, embedding, opt
-    else:
-        train = data['train']  
-        return train, dev, dev_y, embedding, opt
+        return train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt
+    else: 
+        return train, dev, dev_y, sample_train, sample_train_y, embedding, opt
+
+
+def train_process(train, epoch, args, model, log):
+    batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
+    start = datetime.now()
+    for i, batch in enumerate(batches):
+        model.update(batch)
+        if i % args.log_per_updates == 0:
+            log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
+                epoch, model.updates, model.train_loss.value,
+                str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+    log.debug('\n')
+
+
+def test_process(dev, dev_y, args, model, log, mode='dev'):
+    test_train=True
+    if mode == 'dev':
+        log.warning("Evaluating dev set:")
+        test_train=False
+    elif mode == 'train':
+        log.warning("Evaluating total train set:")
+    elif mode == 'sample_train':
+        log.warning("Evaluating sampled train set:") 
+
+    batches = BatchGen(dev, args.batch_size, test_train=test_train, evaluation=True, gpu=args.cuda)
+    predictions = []
+    for i, batch in enumerate(batches):
+        predictions.extend(model.predict(batch))
+        log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
+    em, f1 = score(predictions, dev_y)
+
+    if mode == 'dev':
+        log.warning("Dev EM: {} F1: {}".format(em, f1))
+    elif mode == 'train':
+        log.warning("Train EM: {} F1: {}".format(em, f1))
+    elif mode == 'sample_train':
+        log.warning("Sampled train EM: {} F1: {}".format(em, f1))
+
+    return em, f1
 
 
 class BatchGen:
