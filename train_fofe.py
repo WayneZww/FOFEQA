@@ -67,6 +67,8 @@ def main():
             batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
             start = datetime.now()
             for i, batch in enumerate(batches):
+                if i == 1000 :
+                    break
                 model.update(batch)
                 if i % args.log_per_updates == 0:
                     log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(

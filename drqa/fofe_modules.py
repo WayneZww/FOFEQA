@@ -92,8 +92,8 @@ class fofe_dual_filter(nn.Module):
             self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha_h, torch.range(0, length-1)))
     
     def forward(self, x):
-        if self.alpha == 1 or self.alpha == 0 :
-            return x
+        #if self.alpha == 1 or self.alpha == 0 :
+        #    return x
         if self.inverse:
             x = F.pad(x,(0, self.length))
         else :
@@ -149,7 +149,7 @@ class fofe_dual(nn.Module):
         self.alpha_l = alpha_l
         self.alpha_h = alpha_h
         
-    def forward(self, x):
+    def forward(self, x, x_mask):
         length = x.size(-2)
         matrix_s = x.new_empty(x.size(0),1,length)
         matrix_s[:,].copy_(torch.pow(self.alpha_l,torch.linspace(length-1,0,length)))
@@ -451,16 +451,15 @@ class fofe_flex_all_encoder(nn.Module):
         for i in range(max_len):
             if self.inverse:
                 fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.range(0, i-1))).unsqueeze(1)
-                out.append(F.conv1d(F.pad(x,(0, i), fofe_kernel, bias=None, stride=1, 
+                out.append(F.conv1d(F.pad(x,(0, i)), fofe_kernel, bias=None, stride=1, 
                                 padding=0, groups=self.channels).unsqueeze(-2))
             else:
                 fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.linspace(i-1, 0, i))).unsqueeze(1)
                 out.append(F.conv1d(F.pad(x,(i, 0)), fofe_kernel, bias=None, stride=1, 
-                                padding=0, groups=self.channels).unsqueeze(-2))
-        
+                                padding=0, groups=self.channels).unsqueeze(-2))        
         if self.inverse:
             fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.range(0, 64-1))).unsqueeze(1)
-            out.append(F.conv1d(F.pad(x,(0, i), fofe_kernel, bias=None, stride=1, 
+            out.append(F.conv1d(F.pad(x,(0, i)), fofe_kernel, bias=None, stride=1, 
                             padding=0, groups=self.channels).unsqueeze(-2))
         else :
             fofe_kernel = torch.pow(self.alpha, x.new_tensor(torch.linspace(64-1, 0, 64))).unsqueeze(1)

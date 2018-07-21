@@ -1,7 +1,7 @@
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .fofe_modules import Attention, fofe_res_block
+#from .fofe_modules import Attention, fofe_res_block
 
 
 class BottleNeck(nn.Module):
