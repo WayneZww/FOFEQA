@@ -155,9 +155,11 @@ class fofe_dual(nn.Module):
         matrix_s[:,].copy_(torch.pow(self.alpha_l,torch.linspace(length-1,0,length)))
         matrix_l = x.new_empty(x.size(0),1,length)
         matrix_l[:,].copy_(torch.pow(self.alpha_h,torch.linspace(length-1,0,length)))
-        short_fofe = torch.bmm(matrix_s,x).squeeze(-2)
-        long_fofe = torch.bmm(matrix_l,x).squeeze(-2)
-        fofe_code = torch.cat([short_fofe, long_fofe], dim=-1)
+        mask_l = torch.pow(self.alpha_l, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        mask_h = torch.pow(self.alpha_h, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        short_fofe = torch.bmm(matrix_s,x).squeeze(-2).mul(mask_l)
+        long_fofe = torch.bmm(matrix_l,x).squeeze(-2).mul(mask_h)
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=-1).unsqueeze(-1)
         return fofe_code
     
     def extra_repr(self):

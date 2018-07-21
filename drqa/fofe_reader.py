@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_flex_dual, fofe_encoder_dual, fofe_res_block, fofe_linear_tricontext
+from .fofe_modules import fofe_dual, fofe_encoder_dual, fofe_res_block, fofe_linear_tricontext
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
@@ -71,7 +71,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_flex_dual(opt['embedding_dim'], opt['fofe_alpha_l'], opt['fofe_alpha_h'])
+        self.fofe_linear = fofe_dual(opt['embedding_dim'], opt['fofe_alpha_l'], opt['fofe_alpha_h'])
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
@@ -84,8 +84,8 @@ class FOFEReader(nn.Module):
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*2, 1, 1, bias=False),
-                nn.BatchNorm1d( opt['hidden_size']*2),
+                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*2, 2, 1, 1, bias=False),
             )
