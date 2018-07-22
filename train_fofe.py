@@ -18,12 +18,12 @@ from drqa.utils import str2bool
 def main():
     args, log = setup()
     log.info('[Program starts. Loading data...]')
-    # ---------------------------------------------------------------------------------
+
     if args.test_train:
         train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     else:
         train, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
-    # ---------------------------------------------------------------------------------
+
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -63,10 +63,9 @@ def main():
         # train
         if not args.test_only:
             train_process(train, epoch, args, model, log)
-        # eval
+
         if args.test_only and args.resume:
-            break 
-        
+            break         
         # Test on Dev Set
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
         # Test on sampled train set
@@ -74,7 +73,7 @@ def main():
         # Test on total Train Set
         if args.test_train and epoch % 10 == 0:
             train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
-
+        log.debug('\n')
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
@@ -132,7 +131,6 @@ def setup():
                         help='reduce initial (resumed) learning rate by this factor.')
     parser.add_argument('-op', '--optimizer', default='adamax',
                         help='supported optimizer: adamax, sgd')
-    parser.add_argument('-gc', '--grad_clipping', type=float, default=10)
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
     parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
                         help='only applied to SGD.')
@@ -142,8 +140,6 @@ def setup():
                         help='finetune top-x embeddings.')
     parser.add_argument('--fix_embeddings', action='store_true',
                         help='if true, `tune_partial` will be ignored.')
-    parser.add_argument('--rnn_padding', action='store_true',
-                        help='perform rnn padding (much slower but more accurate).')
 
     # model
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
@@ -163,8 +159,6 @@ def setup():
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
                         help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
-    #parser.add_argument('--fofe_alpha_l', type=float, default=0.4)
-    #parser.add_argument('--fofe_alpha_h', type=float, default=0.8)
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
@@ -264,7 +258,6 @@ def train_process(train, epoch, args, model, log):
             log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
                 epoch, model.updates, model.train_loss.value,
                 str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-    log.debug('\n')
 
 
 def test_process(dev, dev_y, args, model, log, mode='dev'):
