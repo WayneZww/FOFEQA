@@ -1,6 +1,8 @@
 train_fofe_debug.py
 git.sh
 data/
+*.py~
+drqa/*.py~
 drqa/__pycache__/
 drqa/BACKUP/
 models/

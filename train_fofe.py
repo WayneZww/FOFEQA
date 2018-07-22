@@ -73,7 +73,6 @@ def main():
         # Test on total Train Set
         if args.test_train and epoch % 10 == 0:
             train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
-        log.debug('\n')
         # save
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
@@ -84,6 +83,7 @@ def main():
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
                 log.info('[new best model saved.]')
+        log.debug('\n')
 
         if args.test_only:
             break
@@ -94,7 +94,7 @@ def setup():
         description='Train a Document Reader model.'
     )
     # system
-    parser.add_argument('--log_per_updates', type=int, default=3,
+    parser.add_argument('--log_per_updates', type=int, default=5,
                         help='log model loss per x updates (mini-batches).')
     parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
                         help='path to preprocessed data file.')
