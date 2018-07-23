@@ -32,7 +32,8 @@ class FOFEReader(nn.Module):
         if opt['pretrained_words']:
             assert embedding is not None
             self.embedding = nn.Embedding.from_pretrained(embedding, freeze=False)
-            if opt['fix_embeddings']:
+            print("pretrained embedding used")
+            """if opt['fix_embeddings']:
                 assert opt['tune_partial'] == 0
                 self.embedding.weight.requires_grad = False
             elif opt['tune_partial'] > 0:
@@ -43,7 +44,7 @@ class FOFEReader(nn.Module):
                     grad[offset:] = 0
                     return grad
 
-                self.embedding.weight.register_hook(embedding_hook)
+                self.embedding.weight.register_hook(embedding_hook)"""
 
         else:  # random initialized
             self.embedding = nn.Embedding(opt['vocab_size'],
@@ -87,7 +88,7 @@ class FOFEReader(nn.Module):
 #                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
 #                nn.BatchNorm1d( opt['hidden_size']*4),
 #                nn.ReLU(inplace=True),
-                nn.Dropout(0.1),
+#                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
         else:

@@ -46,7 +46,7 @@ def main():
             
         # Test  dev and total train
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
-        train_em, train_f1 = test_process(train, train_y, args, model, log, mode='train')
+        sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
 
         if math.fabs(dev_em - checkpoint['em']) > 1e-3 or math.fabs(dev_f1 - checkpoint['f1']) > 1e-3:
             log.info('Inconsistent: recorded EM: {} F1: {}'.format(checkpoint['em'], checkpoint['f1']))
