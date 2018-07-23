@@ -71,48 +71,6 @@ class fofe_filter(nn.Module):
                 'length={length}, inverse={inverse}'.format(**self.__dict__)
 
 
-class fofe_dual_filter(nn.Module):
-    def __init__(self, inplanes, alpha_l=0.4, alpha_h=0.8, length=3, inverse=False):
-        super(fofe_dual_filter, self).__init__()
-        self.length = length
-        self.inplanes = inplanes
-        self.alpha_l = alpha_l
-        self.alpha_h = alpha_h
-        self.fofe_kernel_s = Parameter(torch.Tensor(inplanes,1,length))
-        self.fofe_kernel_s.requires_grad_(False)
-        self.fofe_kernel_l = Parameter(torch.Tensor(inplanes,1,length))
-        self.fofe_kernel_l.requires_grad_(False)
-        self._init_kernel(alpha_l, alpha_h, length, inverse)
-        #self.padding = (length - 1)//2
-        self.inverse = inverse
-
-    def _init_kernel(self, alpha_l, alpha_h, length, inverse):
-        if not inverse :
-            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha_l, torch.linspace(length-1, 0, length)))
-            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha_h, torch.linspace(length-1, 0, length)))
-        else :
-            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha_l, torch.range(0, length-1)))
-            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha_h, torch.range(0, length-1)))
-    
-    def forward(self, x):
-        #if self.alpha == 1 or self.alpha == 0 :
-        #    return x
-        if self.inverse:
-            x = F.pad(x,(0, self.length))
-        else :
-            x = F.pad(x,(self.length, 0))
-        short_fofe = F.conv1d(x, self.fofe_kernel_s, bias=None, stride=1, 
-                        padding=0, groups=self.inplanes)
-        long_fofe = F.conv1d(x, self.fofe_kernel_l, bias=None, stride=1, 
-                        padding=0, groups=self.inplanes)
-        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
-        return fofe_code
-
-    def extra_repr(self):
-        return 'inplanes={inplanes}, alpha_l={alpha_l}, alpha_h={alpha_h}, ' \
-                'length={length}, inverse={inverse}'.format(**self.__dict__)
-
-
 class fofe_linear(nn.Module):
     def __init__(self, channels, alpha): 
         super(fofe_linear, self).__init__()
@@ -150,27 +108,61 @@ class fofe(nn.Module):
     def extra_repr(self):
         return 'alpha={alpha}'.format(**self.__dict__)
 
+
 class fofe_dual(nn.Module):
-    def __init__(self, channels, alpha_l, alpha_h): 
+    def __init__(self, channels, alpha): 
         super(fofe_dual, self).__init__()
-        self.alpha_l = alpha_l
-        self.alpha_h = alpha_h
+        self.alpha = alpha
         
     def forward(self, x, x_mask):
         length = x.size(-2)
         matrix_s = x.new_empty(x.size(0),1,length)
-        matrix_s[:,].copy_(torch.pow(self.alpha_l,torch.linspace(length-1,0,length)))
+        matrix_s[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        mask_s = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
         matrix_l = x.new_empty(x.size(0),1,length)
-        matrix_l[:,].copy_(torch.pow(self.alpha_h,torch.linspace(length-1,0,length)))
-        mask_l = torch.pow(self.alpha_l, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
-        mask_h = torch.pow(self.alpha_h, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
-        short_fofe = torch.bmm(matrix_s,x).squeeze(-2).mul(mask_l)
-        long_fofe = torch.bmm(matrix_l,x).squeeze(-2).mul(mask_h)
-        fofe_code = torch.cat([short_fofe, long_fofe], dim=-1).unsqueeze(-1)
+        matrix_l[:,].copy_(torch.pow(self.alpha-0.4,torch.linspace(length-1,0,length)))
+        mask_l = torch.pow(self.alpha-0.4, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)                                                                                                                 
+        short_fofe = torch.bmm(matrix_s,x).transpose(-1,-2).mul(mask_s.unsqueeze(-1))
+        long_fofe = torch.bmm(matrix_l,x).transpose(-1,-2).mul(mask_l.unsqueeze(-1))
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
         return fofe_code
-    
-    def extra_repr(self):
-        return 'alpha_l={alpha_l}, alpha_h={alpha_h}'.format(**self.__dict__)
+
+
+class fofe_dual_filter(nn.Module):                                                                                                                                                                      
+    def __init__(self, inplanes, alpha=0.8, length=3, inverse=False):
+        super(fofe_dual_filter, self).__init__()
+        self.length = length
+        self.channels = inplanes
+        self.alpha = alpha
+        self.fofe_kernel_s = Parameter(torch.Tensor(inplanes,1,length))
+        self.fofe_kernel_s.requires_grad_(False)
+        self.fofe_kernel_l = Parameter(torch.Tensor(inplanes,1,length))
+        self.fofe_kernel_l.requires_grad_(False)
+        self._init_kernel(alpha, length, inverse)
+        self.inverse = inverse
+
+    def _init_kernel(self, alpha, length, inverse):
+        if not inverse :
+            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha, torch.linspace(length-1, 0, length)))
+            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha-0.4, torch.linspace(length-1, 0, length)))
+        else :
+            self.fofe_kernel_s[:,:,].copy_(torch.pow(alpha, torch.range(0, length-1)))
+            self.fofe_kernel_l[:,:,].copy_(torch.pow(alpha-0.4, torch.range(0, length-1)))
+
+    def forward(self, x):
+        if self.alpha == 1 or self.alpha == 0 :
+            return x
+        if self.inverse:
+            x = F.pad(x,(0, self.length))
+        else :
+            x = F.pad(x,(self.length, 0))
+        short_fofe = F.conv1d(x, self.fofe_kernel_s, bias=None, stride=1,
+                        padding=0, groups=self.channels)
+        long_fofe = F.conv1d(x, self.fofe_kernel_l, bias=None, stride=1,
+                        padding=0, groups=self.channels)
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
+        return fofe_code
+
 
 
 class fofe_flex(nn.Module):
@@ -368,38 +360,8 @@ class fofe_encoder(nn.Module):
         self.forward_filter = []
         self.inverse_filter = []
         for i in range(fofe_max_length):
-            self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1))
-            self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1, inverse=True))
-
-        self.forward_filter = nn.ModuleList(self.forward_filter)
-        self.inverse_filter = nn.ModuleList(self.inverse_filter)
-    
-    def fofe(self, x):
-        forward_fofe = []
-        inverse_fofe = []
-        for forward_filter in self.forward_filter:
-            forward_fofe.append(forward_filter(x).unsqueeze(-2))
-        for inverse_filter in self.inverse_filter:
-            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
-
-        forward_fofe = torch.cat(forward_fofe, dim=-2)
-        inverse_fofe = torch.cat(inverse_fofe, dim=-2)
-        
-        return forward_fofe, inverse_fofe
-
-    def forward(self, x):
-        forward_fofe, inverse_fofe = self.fofe(x)
-        return forward_fofe, inverse_fofe
-
-
-class fofe_encoder_dual(nn.Module):
-    def __init__(self, emb_dim, fofe_alpha_l, fofe_alpha_h, fofe_max_length):
-        super(fofe_encoder_dual, self).__init__()
-        self.forward_filter = []
-        self.inverse_filter = []
-        for i in range(fofe_max_length):
-            self.forward_filter.append(fofe_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1))
-            self.inverse_filter.append(fofe_dual_filter(emb_dim, fofe_alpha_l, fofe_alpha_h, i+1, inverse=True))
+            self.forward_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
@@ -497,3 +459,60 @@ class fofe_encoder_conv(fofe_encoder):
         inverse = self.inverse_conv(inverse_fofe)
 
         return forward, inverse
+
+
+class fofe_multi(nn.Module):
+    def __init__(self, emb_dim, fofe_alpha):
+        super(fofe_multi, self).__init__()
+        self.fofe_alpha = fofe_alpha
+        self.emb_dim = emb_dim
+        self.fofe_matrix = []
+        for alpha in fofe_alpha:
+            self.fofe_matrix.append(fofe(emb_dim, alpha))
+
+        self.fofe_matrix = nn.ModuleList(self.fofe_matrix)
+    
+    def forward(self, x, x_mask):
+        fofe_code = []
+        for fofe_matrix in self.fofe_matrix:
+            fofe_code.append(fofe_matrix(x, x_mask))
+        fofe_code = torch.cat(fofe_code, dim=1)
+        
+        return fofe_code
+
+
+class fofe_multi_filter(nn.Module):
+    def __init__(self, emb_dim, fofe_alpha, fofe_length, inverse=False):
+        super(fofe_multi_filter, self).__init__()
+        self.emb_dim = emb_dim
+        self.fofe_alpha = fofe_alpha
+        self.fofe_length = fofe_length
+        self.inverse = inverse
+        self.filter = []
+        for alpha in fofe_alpha:
+            self.filter.append(fofe_filter(emb_dim, alpha, fofe_length, inverse))
+
+        self.filter = nn.ModuleList(self.filter)
+    
+    def forward(self, x):
+        fofe_code = []
+        for filter in self.filter:
+            fofe_code.append(filter(x))
+        fofe_code = torch.cat(fofe_code, dim=1)
+        return fofe_code
+
+
+class fofe_multi_encoder(fofe_encoder):
+    def __init__(self, emb_dim, fofe_alpha, fofe_max_length):
+        super(fofe_encoder, self).__init__()
+        self.forward_filter = []
+        self.inverse_filter = []
+        for i in range(fofe_max_length):
+            self.forward_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+
+        self.forward_filter = nn.ModuleList(self.forward_filter)
+        self.inverse_filter = nn.ModuleList(self.inverse_filter)
+    
+    
+
