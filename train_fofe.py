@@ -79,8 +79,8 @@ def main():
         if not args.save_last_only or epoch == epoch_0 + args.epochs - 1:
             model_file = os.path.join(args.model_dir, 'checkpoint_epoch_{}.pt'.format(epoch))
             model.save(model_file, epoch, [dev_em, dev_f1, best_val_score])
-            if f1 > best_val_score:
-                best_val_score = f1
+            if dev_f1 > best_val_score:
+                best_val_score = dev_f1
                 copyfile(
                     model_file,
                     os.path.join(args.model_dir, 'best_model.pt'))
@@ -137,7 +137,7 @@ def setup():
     parser.add_argument('-lr', '--learning_rate', type=float, default=0.1)
     parser.add_argument('-mm', '--momentum', type=float, default=0,
                         help='only applied to SGD.')
-    parser.add_argument('-tp', '--tune_partial', type=int, default=1000,
+    parser.add_argument('-tp', '--tune_partial', type=int, default=0,
                         help='finetune top-x embeddings.')
     parser.add_argument('--fix_embeddings', action='store_true',
                         help='if true, `tune_partial` will be ignored.')

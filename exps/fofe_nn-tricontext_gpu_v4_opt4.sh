@@ -33,7 +33,7 @@ python -u train_fofe.py --model_dir ${models_n_logs_dir} \
                 --data_file ${data_dir}/data-test.msgpack \
                 --meta_file ${data_dir}/meta-test.msgpack \
                 --test_train \
-                --tune_partial 1000 \
+                --tune_partial 0 \
                 --epochs ${epoch_num} \
                 --batch_size ${batch_size} \
                 --sample_num ${sample_num} \
