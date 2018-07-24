@@ -116,15 +116,22 @@ class fofe_dual(nn.Module):
         
     def forward(self, x, x_mask):
         length = x.size(-2)
-        matrix_s = x.new_empty(x.size(0),1,length)
-        matrix_s[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-        mask_s = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
-        matrix_l = x.new_empty(x.size(0),1,length)
-        matrix_l[:,].copy_(torch.pow(self.alpha-0.4,torch.linspace(length-1,0,length)))
-        mask_l = torch.pow(self.alpha-0.4, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)                                                                                                                 
-        short_fofe = torch.bmm(matrix_s,x).transpose(-1,-2).mul(mask_s.unsqueeze(-1))
-        long_fofe = torch.bmm(matrix_l,x).transpose(-1,-2).mul(mask_l.unsqueeze(-1))
-        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
+        exponent = x.new_empty(x.size(0),1,length)
+        exponent.copy_(torch.linspace(length-1,0,length))
+        #mask_exponent = exponent - x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).float()
+        #matrix_s = torch.pow(self.alpha, mask_exponent)
+        matrix_s = torch.pow(self.alpha, exponent)
+        #matrix_s = x.new_empty(x.size(0),1,length)
+        #matrix_s[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+        #mask_s = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)
+        #matrix_l = x.new_empty(x.size(0),1,length)
+        #matrix_l[:,].copy_(torch.pow(self.alpha-0.4,torch.linspace(length-1,0,length)))
+        #mask_l = torch.pow(self.alpha-0.4, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1)                                                                                                                 
+        matrix_l = torch.pow(self.alpha-0.4, exponent)
+        #matrix_l = torch.pow(self.alpha-0.4, mask_exponent)
+        short_fofe = torch.bmm(matrix_s,x).transpose(-1,-2)
+        long_fofe = torch.bmm(matrix_l,x).transpose(-1,-2)
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=1).contiguous()
         return fofe_code
 
 
