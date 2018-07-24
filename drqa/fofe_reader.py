@@ -123,16 +123,24 @@ class FOFEReader(nn.Module):
         dq_fofes = []
 
         # 1. Construct FOFE Doc & Query Inputs Matrix
-        for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
-            _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask)
-            doc_embedding_dim = _doc_fofe.size(-1)
-            n_cands_ans = _doc_fofe.size(1)
-            dq_fofes.append(_doc_fofe)
+        if self.training:
+            for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
+                _doc_fofe = d_fofe_encoder(doc_emb, doc_mask)
+                dq_fofes.append(_doc_fofe)
+        else:
+            for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
+                # NOTED: _cands_ans_pos and _padded_cands_mask going to get overwrite next loop, but it should be identical anyway; and since this is for test mode, so no back propagation [TODO: TEST IF THIS IS CORRECT]
+                _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask, not self.training)
+                dq_fofes.append(_doc_fofe)
+
+        doc_embedding_dim = _doc_fofe.size(-1)
+        n_cands_ans = _doc_fofe.size(1)
         for q_fofe_encoder in self.query_fofe_encoder:
             _query_fofe = q_fofe_encoder(query_emb, query_mask)\
                             .unsqueeze(1)\
                             .expand(batch_size,n_cands_ans,query_embedding_dim)
             dq_fofes.append(_query_fofe)
+
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 

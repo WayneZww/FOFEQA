@@ -6,7 +6,7 @@ from torch.nn.parameter import Parameter
 from .utils import tri_num, count_num_substring
 
 class fofe_tricontext(nn.Module):
-    def __init__(self, embedding_dim,  alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True):
+    def __init__(self, embedding_dim, alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True):
         super(fofe_tricontext, self).__init__()
         self.alpha = alpha
         self.cand_len_limit = cand_len_limit
@@ -38,7 +38,7 @@ class fofe_tricontext(nn.Module):
         sample_idx = currbatch_base_idx + sample_base_idx + sample_span
         return sample_idx
 
-    def get_contexts_alpha_buffers(self, x_input):
+    def get_contexts_alpha_buffers(self, x_input, test_mode=False):
         '''
             Derive context_alpha_buffers from _base_tril_alpha and _base_triu_alpha
             
@@ -100,17 +100,26 @@ class fofe_tricontext(nn.Module):
             context_alpha_buffers[4][start_idx:end_idx,:].copy_(_base_triu_alpha[i,:doc_len].expand(end_idx-start_idx,doc_len))
 
             # Candidate Positions within Doc
-            cands_pos[start_idx:end_idx, 0] = i
-            cands_pos[start_idx:end_idx, 1].copy_(torch.range(i, i+end_idx-start_idx-1))
+            if (test_mode):
+                cands_pos[start_idx:end_idx, 0] = i
+                cands_pos[start_idx:end_idx, 1].copy_(torch.range(i, i+end_idx-start_idx-1))
         
-        return context_alpha_buffers, cands_pos
+        if (test_mode):
+            return context_alpha_buffers, cands_pos
+        else:
+            return context_alpha_buffers
+
     
-    def forward(self, x_input, x_mask):
+    def forward(self, x_input, x_mask, test_mode=False):
         batch_size = x_input.size(0)
         length = min(x_input.size(1), self.doc_len_limit)
         embedding_dim = x_input.size(2)
         
-        context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input)
+        if (test_mode):
+            context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input, test_mode)
+        else:
+            context_alpha_buffer = self.get_contexts_alpha_buffers(x_input, test_mode)
+        
         n_cand = context_alpha_buffer[0].size(0)
         n_context_types = len(context_alpha_buffer)
         #context_alpha_buffers[0] = Candidate Context alpha buffer
@@ -142,10 +151,14 @@ class fofe_tricontext(nn.Module):
                                               _batchwise_fofe_codes[0],
                                               _batchwise_fofe_codes[4],
                                               _batchwise_fofe_codes[3]], dim=-1)
-        batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
-        batchwise_padded_cands = torch.bmm(_batchwise_alpha_buffer[0], x_mask.float().unsqueeze(-1)) > 0
-    
-        return batchwise_fofe_codes, batchwise_cands_pos, batchwise_padded_cands
+
+        if (test_mode):
+            batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
+            batchwise_padded_cands = torch.bmm(_batchwise_alpha_buffer[0], x_mask.float().unsqueeze(-1)) > 0
+            return batchwise_fofe_codes, batchwise_cands_pos, batchwise_padded_cands
+        else:
+            return batchwise_fofe_codes
+
 
 class fofe(nn.Module):
     def __init__(self, channels, alpha): 
