@@ -165,18 +165,21 @@ class fofe(nn.Module):
         super(fofe, self).__init__()
         self.alpha = alpha
         
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask=None):
         length = x.size(-2)
         
         # Construct Alphas Buffer (i.e. Matrix)
         matrix = x.new_empty(x.size(0),1,length)
         matrix[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-        
-        # Adjust Alphas Buffer to accommondate the padding
-        # NOTED: alpha for the padding will become > 1, but noted that their corresponding x values are 0.
-        matrix_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
-        matrix.copy_(torch.bmm(matrix_padding_rm, matrix))
-    
+        if x_mask is not None:
+            # Adjust Alphas Buffer to accommondate the padding
+            matrix_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
+            matrix.copy_(torch.bmm(matrix_padding_rm, matrix))
+            
+            # alpha for the padding will become > 1, so turn it to 0
+            rev_x_mask = (1 - x_mask).unsqueeze(1).float()
+            matrix.copy_(torch.mul(matrix, rev_x_mask))
+
         fofe_code = torch.bmm(matrix,x).squeeze(-2)
         return fofe_code
 

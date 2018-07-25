@@ -139,6 +139,9 @@ class FOFEReader(nn.Module):
             _query_fofe = q_fofe_encoder(query_emb, query_mask)\
                             .unsqueeze(1)\
                             .expand(batch_size,n_cands_ans,query_embedding_dim)
+            #_query_fofe = q_fofe_encoder(query_emb)\
+            #                .unsqueeze(1)\
+            #                .expand(batch_size,n_cands_ans,query_embedding_dim)
             dq_fofes.append(_query_fofe)
 
         dq_input = torch.cat(dq_fofes, dim=-1)\
