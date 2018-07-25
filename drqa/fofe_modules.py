@@ -124,7 +124,7 @@ class fofe_dual(nn.Module):
         matrix_l = torch.pow(self.alpha-0.4, mask_exponent).mul(1-x_mask.unsqueeze(1))
         short_fofe = torch.bmm(matrix_s,x).transpose(-1,-2)
         long_fofe = torch.bmm(matrix_l,x).transpose(-1,-2)
-        fofe_code = torch.cat([short_fofe, long_fofe], dim=1).contiguous()
+        fofe_code = torch.cat([short_fofe, long_fofe], dim=1)
         return fofe_code
 
 
