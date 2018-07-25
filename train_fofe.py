@@ -136,7 +136,7 @@ def setup():
                         help='only applied to SGD.')
     parser.add_argument('-mm', '--momentum', type=float, default=0,
                         help='only applied to SGD.')
-    parser.add_argument('-tp', '--tune_partial', type=int, default=1000,
+    parser.add_argument('-tp', '--tune_partial', type=int, default=0,
                         help='finetune top-x embeddings.')
     parser.add_argument('--fix_embeddings', action='store_true',
                         help='if true, `tune_partial` will be ignored.')

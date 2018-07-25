@@ -33,7 +33,7 @@ class FOFEReader(nn.Module):
             assert embedding is not None
             self.embedding = nn.Embedding.from_pretrained(embedding, freeze=False)
             print("pretrained embedding used")
-            """if opt['fix_embeddings']:
+            if opt['fix_embeddings']:
                 assert opt['tune_partial'] == 0
                 self.embedding.weight.requires_grad = False
             elif opt['tune_partial'] > 0:
@@ -44,7 +44,7 @@ class FOFEReader(nn.Module):
                     grad[offset:] = 0
                     return grad
 
-                self.embedding.weight.register_hook(embedding_hook)"""
+                self.embedding.weight.register_hook(embedding_hook)
 
         else:  # random initialized
             self.embedding = nn.Embedding(opt['vocab_size'],
@@ -253,7 +253,7 @@ class FOFEReader(nn.Module):
         ans_batch = torch.cat(ans_batch, dim=-1)
 
         # generate query batch
-        query_fofe = self.fofe_linear(query_emb, query_mask)
+        query_fofe = self.fofe_linear(query_emb, query_mask.float())
         query_batch = []
         for i in range(ans_batch.size(-1)):
             query_batch.append(query_fofe)
