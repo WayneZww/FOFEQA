@@ -258,6 +258,7 @@ def train_process(train, epoch, args, model, log):
             log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
                 epoch, model.updates, model.train_loss.value,
                 str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+    log.debug('\n')
 
 
 def test_process(dev, dev_y, args, model, log, mode='dev'):
