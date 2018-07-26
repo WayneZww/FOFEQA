@@ -93,21 +93,25 @@ class fofe_linear(nn.Module):
 
 
 class fofe(nn.Module):
-    def __init__(self, channels, alpha): 
+    def __init__(self, channels, alpha, inverse=False): 
         super(fofe, self).__init__()
         self.alpha = alpha
+        self.inverse = inverse
         
     def forward(self, x, x_mask):
         length = x.size(-2)
         exponent = x.new_empty(x.size(0),1,length)
-        exponent.copy_(torch.linspace(length-1,0,length))
-        mask_exponent = (exponent - x_mask.sum(1).unsqueeze(-1).unsqueeze(-1))
-        matrix = torch.pow(self.alpha, mask_exponent).mul(1-x_mask.unsqueeze(1))
+        if self.inverse :
+            exponent.copy_(torch.range(0, length-1))
+        else:
+            exponent.copy_(torch.linspace(length-1,0,length))
+            exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
+        matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
         fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
         return fofe_code
     
     def extra_repr(self):
-        return 'alpha={alpha}'.format(**self.__dict__)
+        return 'alpha={alpha}, inverse={inverse}'.format(**self.__dict__)
 
 
 class fofe_dual(nn.Module):
@@ -468,7 +472,8 @@ class fofe_multi(nn.Module):
         self.emb_dim = emb_dim
         self.fofe_matrix = []
         for alpha in fofe_alpha:
-            self.fofe_matrix.append(fofe(emb_dim, alpha))
+            self.fofe_matrix.append(fofe(emb_dim, alpha, inverse=False))
+            self.fofe_matrix.append(fofe(emb_dim, alpha, inverse=True))
 
         self.fofe_matrix = nn.ModuleList(self.fofe_matrix)
     
