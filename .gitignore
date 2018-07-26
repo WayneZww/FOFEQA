@@ -1,7 +1,6 @@
 train_fofe_debug.py
 git.sh
 data/
-*.py~
 drqa/*.py~
 drqa/__pycache__/
 drqa/BACKUP/
@@ -13,3 +12,4 @@ exps/*
 *.log
 .vscode
 .ipynb_checkpoints/
+*~

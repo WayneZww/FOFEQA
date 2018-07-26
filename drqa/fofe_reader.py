@@ -79,15 +79,15 @@ class FOFEReader(nn.Module):
             self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d((doc_input_size*3+opt['embedding_dim']*1)*len(opt['fofe_alpha']), opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Conv1d((doc_input_size*3+opt['embedding_dim']*1)*2*len(opt['fofe_alpha']), opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
-#                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-#                nn.BatchNorm1d( opt['hidden_size']*4),
-#                nn.ReLU(inplace=True),
+                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
@@ -223,16 +223,18 @@ class FOFEReader(nn.Module):
         r_ctx_ex_batch = []
         l_ctx_in_batch = []
         r_ctx_in_batch = []
-        ans_batch = []
+        forward_ans_batch = []
+        inverse_ans_batch = []
         mask_batch = []
         starts = []
         ends = []
         for i in range(max_len):
             l_ctx_ex_batch.append(forward_fofe[:, :, -1, 0:doc_len-i])
-            #l_ctx_in_batch.append(forward_fofe[:, :, -1, 1+i:doc_len+1])
+            l_ctx_in_batch.append(forward_fofe[:, :, -1, 1+i:doc_len+1])
             r_ctx_ex_batch.append(inverse_fofe[:, :, -1, 1+i:doc_len+1])
-            #r_ctx_in_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
-            ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
+            r_ctx_in_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
+            forward_ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
+            inverse_ans_batch.append(inverse_fofe[:, :, i, 0:doc_len-i])
             if self.training:
                 for j in range(batchsize):
                     ans_e = target_e[j].item()+1
@@ -246,21 +248,21 @@ class FOFEReader(nn.Module):
                 starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
                 ends.append(torch.arange(i, doc_len, device=doc_emb.device))
 
-        #l_ctx_in_batch =torch.cat(l_ctx_in_batch, dim=-1)
+        l_ctx_in_batch =torch.cat(l_ctx_in_batch, dim=-1)
         l_ctx_ex_batch =torch.cat(l_ctx_ex_batch, dim=-1)
         r_ctx_ex_batch =torch.cat(r_ctx_ex_batch, dim=-1)
-        #r_ctx_in_batch =torch.cat(r_ctx_in_batch, dim=-1)
-        ans_batch = torch.cat(ans_batch, dim=-1)
+        r_ctx_in_batch =torch.cat(r_ctx_in_batch, dim=-1)
+        inverse_ans_batch = torch.cat(inverse_ans_batch, dim=-1)
+        forward_ans_batch = torch.cat(forward_ans_batch, dim=-1)
 
         # generate query batch
         query_fofe = self.fofe_linear(query_emb, query_mask.float())
         query_batch = []
-        for i in range(ans_batch.size(-1)):
+        for i in range(forward_ans_batch.size(-1)):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)  
 
-        #dq_input = torch.cat([l_ctx_in_batch, l_ctx_ex_batch, ans_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
-        dq_input = torch.cat([l_ctx_ex_batch, ans_batch, r_ctx_ex_batch, query_batch], dim=1)
+        dq_input = torch.cat([l_ctx_in_batch, l_ctx_ex_batch, forward_ans_batch, inverse_ans_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
 
         if self.training:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
