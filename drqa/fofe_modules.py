@@ -103,7 +103,7 @@ class fofe(nn.Module):
         exponent.copy_(torch.linspace(length-1,0,length))
         mask_exponent = (exponent - x_mask.sum(1).unsqueeze(-1).unsqueeze(-1))
         matrix = torch.pow(self.alpha, mask_exponent).mul(1-x_mask.unsqueeze(1))
-        fofe_code = torch.bmm(matrix,x).transpose(-1,-2).mul(mask.unsqueeze(-1))
+        fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
         return fofe_code
     
     def extra_repr(self):
@@ -360,8 +360,8 @@ class fofe_encoder(nn.Module):
         self.forward_filter = []
         self.inverse_filter = []
         for i in range(fofe_max_length):
-            self.forward_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1))
-            self.inverse_filter.append(fofe_dual_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+            self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1))
+            self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)

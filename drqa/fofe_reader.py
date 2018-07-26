@@ -7,7 +7,7 @@ import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fofe_modules import fofe_dual as fofe_multi, fofe_encoder as fofe_multi_encoder
+from .fofe_modules import fofe_multi, fofe_multi_encoder
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
@@ -58,7 +58,7 @@ class FOFEReader(nn.Module):
         if opt['ner']:
             doc_input_size += opt['ner_size']
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_multi_encoder(doc_input_size, opt['fofe_alpha'][1],  opt['fofe_max_length'])
+        self.fofe_encoder = fofe_multi_encoder(doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
         # NOTED: current doc_len_limit = 809
         """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -72,7 +72,7 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_multi(opt['embedding_dim'], opt['fofe_alpha'][1])
+        self.fofe_linear = fofe_multi(opt['embedding_dim'], opt['fofe_alpha'])
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
