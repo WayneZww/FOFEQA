@@ -235,10 +235,17 @@ class bidirect_fofe_tricontext(nn.Module):
                                              inverse=True)
 
     def forward(self, x_input, x_mask, test_mode=False):
-        forward_fofe_code = self.forward_fofe(x_input, x_mask, test_mode)
-        backward_fofe_code = self.backward_fofe(x_input, x_mask, test_mode)
-        fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
-        return fofe_code
+        if (test_mode):
+            backward_fofe_code, cands_pos, padded_cands = self.backward_fofe(x_input, x_mask, test_mode)
+
+            forward_fofe_code, _, _ = self.forward_fofe(x_input, x_mask, test_mode)
+            fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
+            return fofe_code, cands_pos, padded_cands
+        else:
+            backward_fofe_code = self.backward_fofe(x_input, x_mask, test_mode)
+            forward_fofe_code = self.forward_fofe(x_input, x_mask, test_mode)
+            fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
+            return fofe_code
 
 
 class bidirect_fofe(nn.Module):
