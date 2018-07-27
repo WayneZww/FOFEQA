@@ -13,6 +13,8 @@ import torch
 import msgpack
 from drqa.fofe_model import DocReaderModel
 from drqa.utils import str2bool
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def main():
@@ -57,7 +59,14 @@ def main():
         model = DocReaderModel(opt, embedding)
         epoch_0 = 1
         best_val_score = 0.0
-
+    
+    dev_em_record = []
+    dev_f1_record = []
+    sample_em_record = []
+    sample_f1_record = []
+    x_axis = []
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot()
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
@@ -87,6 +96,33 @@ def main():
 
         if args.test_only:
             break
+        dev_em_record.append(dev_em) 
+        dev_f1_record.append(dev_f1) 
+        sample_em_record.append(sample_em)
+        sample_f1_record.append(sample_em)
+        x_axis.append(epoch)
+
+        if args.draw_score:
+            x_axis_np = np.asarray(x_axis)
+            plt.plot(x_axis_np,np.asarray(dev_em_record),'-',label="Dev EM")
+            plt.plot(x_axis_np,np.asarray(dev_f1_record),'-',label="Dev F1")
+            plt.plot(x_axis_np,np.asarray(sample_em_record),'-',label="Sampled Train EM")
+            plt.plot(x_axis_np,np.asarray(sample_f1_record),'-',label="Sampled Train F1")
+            dev_max_idx = np.argmax(np.asarray(dev_f1_record))
+            sample_max_idx = np.argmax(np.asarray(sample_f1_record))
+            plt.plot(dev_max_idx+1,dev_f1_record[dev_max_idx],'ro')
+            plt.plot(sample_max_idx+1,sample_f1_record[sample_max_idx],'bo')
+            plt.xlabel("Epoch")
+            plt.xticks(np.arange(epoch_0, args.epochs+1, 5))
+            plt.ylabel("Score")
+            plt.yticks(np.arange(20,101,5))
+            plt.title("EM & F1 Scores")
+            plt.legend()
+            plt.savefig(args.model_dir+"/Test.png")
+            plt.clf()
+
+        
+        
 
 
 def setup():
@@ -140,6 +176,8 @@ def setup():
                         help='finetune top-x embeddings.')
     parser.add_argument('--fix_embeddings', action='store_true',
                         help='if true, `tune_partial` will be ignored.')
+    parser.add_argument('--draw_score', action='store_true',
+                        help='if true, will draw test score')
 
     # model
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
@@ -258,7 +296,6 @@ def train_process(train, epoch, args, model, log):
             log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
                 epoch, model.updates, model.train_loss.value,
                 str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
-    log.debug('\n')
 
 
 def test_process(dev, dev_y, args, model, log, mode='dev'):

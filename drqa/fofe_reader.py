@@ -3,9 +3,12 @@
 # Origin: https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents/drqa
 
 import random
+import numpy as np
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+            
 
 from .fofe_modules import fofe_multi, fofe_multi_encoder
 
@@ -211,7 +214,7 @@ class FOFEReader(nn.Module):
         if self.training:
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
-            max_len = int(max(self.opt['max_len'], v+1))
+            max_len = int(min(max(self.opt['max_len'], v+1), doc_len))
             score_batch = []
             can_score = doc_emb.new_zeros((batchsize, 1, max_len, doc_len+1))
         else:
@@ -284,6 +287,13 @@ class FOFEReader(nn.Module):
             #     s_idxs.append(-1)
             #     e_idxs.append(-1)
             # else:
+            """           
+            fig = plt.figure(figsize=(50,10))
+            ax = fig.add_subplot()
+            x = np.arange(scores[i].size(0))
+            y = scores[i].cpu().numpy()
+            plt.plot(x,y,'o-',label=u"线条")
+            plt.savefig(self.opt["model_dir"]+"/temp.png")  """   
             s_idxs.append(starts[idx.item()].item())
             e_idxs.append(ends[idx.item()].item())
 
