@@ -205,7 +205,6 @@ class FOFEReader(nn.Module):
            
     def scan_all(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
-        forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb)
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
 
@@ -218,6 +217,8 @@ class FOFEReader(nn.Module):
         else:
             max_len = int(min(self.opt['max_len'], doc_len))
 
+        forward_fofe, inverse_fofe = self.fofe_encoder(doc_emb, max_len)
+        
         # generate ctx and ans batch
         l_ctx_ex_batch = []
         r_ctx_ex_batch = []

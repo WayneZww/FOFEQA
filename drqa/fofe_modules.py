@@ -370,21 +370,23 @@ class fofe_encoder(nn.Module):
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
     
-    def fofe(self, x):
+    def forward(self, x, max_len):
         forward_fofe = []
         inverse_fofe = []
-        for forward_filter in self.forward_filter:
-            forward_fofe.append(forward_filter(x).unsqueeze(-2))
-        for inverse_filter in self.inverse_filter:
-            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
-
+#        for forward_filter in self.forward_filter:
+#            forward_fofe.append(forward_filter(x).unsqueeze(-2))
+#        for inverse_filter in self.inverse_filter:
+#            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
+        for i in range(max_len):
+            forward_fofe.append(self.forward_filter[i](x).unsqueeze(-2))
+            inverse_fofe.append(self.inverse_filter[i](x).unsqueeze(-2))
+            
+        forward_fofe.append(self.forward_filter[-1](x).unsqueeze(-2))
+        inverse_fofe.append(self.inverse_filter[-1](x).unsqueeze(-2))
+        
         forward_fofe = torch.cat(forward_fofe, dim=-2)
         inverse_fofe = torch.cat(inverse_fofe, dim=-2)
         
-        return forward_fofe, inverse_fofe
-
-    def forward(self, x):
-        forward_fofe, inverse_fofe = self.fofe(x)
         return forward_fofe, inverse_fofe
 
 
