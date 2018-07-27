@@ -85,7 +85,7 @@ def main():
         'embedding': embeddings.tolist(),
         'wv_cased': args.wv_cased,
     }
-    with open('./data/SQuAD/meta-test.msgpack', 'wb') as f:
+    with open('./data/SQuAD-v1.1/meta-test.msgpack', 'wb') as f:
         msgpack.dump(meta, f)
     result = {
         'train': train,
@@ -95,14 +95,14 @@ def main():
     #        question_id, context, context_token_span, answer, answer_start, answer_end
     # dev:   id, context_id, context_features, tag_id, ent_id,
     #        question_id, context, context_token_span, answer
-    with open('./data/SQuAD/data-test.msgpack', 'wb') as f:
+    with open('./data/SQuAD-v1.1/data-test.msgpack', 'wb') as f:
         msgpack.dump(result, f)
     if args.sample_size:
         sample = {
             'train': train[:args.sample_size],
             'dev': dev[:args.sample_size]
         }
-        with open('./data/SQuAD/sample.msgpack', 'wb') as f:
+        with open('./data/SQuAD-v1.1/sample.msgpack', 'wb') as f:
             msgpack.dump(sample, f)
     log.info('saved to disk.')
 
@@ -110,9 +110,9 @@ def setup():
     parser = argparse.ArgumentParser(
         description='Preprocessing data files, about 10 minitues to run.'
     )
-    parser.add_argument('--trn_file', default='./data/SQuAD/train-v1.1.json',
+    parser.add_argument('--trn_file', default='./data/SQuAD-v1.1/train-v1.1.json',
                         help='path to train file.')
-    parser.add_argument('--dev_file', default='./data/SQuAD/dev-v1.1.json',
+    parser.add_argument('--dev_file', default='./data/SQuAD-v1.1/dev-v1.1.json',
                         help='path to dev file.')
     parser.add_argument('--wv_file', default='./data/glove/glove.840B.300d.txt',
                         help='path to word vector file.')

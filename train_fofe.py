@@ -97,9 +97,9 @@ def setup():
     # system
     parser.add_argument('--log_per_updates', type=int, default=3,
                         help='log model loss per x updates (mini-batches).')
-    parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
+    parser.add_argument('--data_file', default='./data/SQuAD-v1.1/data.msgpack',
                         help='path to preprocessed data file.')
-    parser.add_argument('--meta_file', default='./data/SQuAD/meta.msgpack',
+    parser.add_argument('--meta_file', default='./data/SQuAD-v1.1/meta.msgpack',
                         help='path to preprocessed data file.')
     parser.add_argument('--model_dir', default='models',
                         help='path to store saved models.')
