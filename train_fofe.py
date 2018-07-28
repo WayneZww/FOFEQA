@@ -65,8 +65,6 @@ def main():
     sample_em_record = []
     sample_f1_record = []
     x_axis = []
-    fig = plt.figure(figsize=(8,6))
-    ax = fig.add_subplot()
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
@@ -103,6 +101,8 @@ def main():
         x_axis.append(epoch)
 
         if args.draw_score:
+            fig = plt.figure(figsize=(8,6))
+            ax = fig.add_subplot()
             x_axis_np = np.asarray(x_axis)
             plt.plot(x_axis_np,np.asarray(dev_em_record),'-',label="Dev EM")
             plt.plot(x_axis_np,np.asarray(dev_f1_record),'-',label="Dev F1")
