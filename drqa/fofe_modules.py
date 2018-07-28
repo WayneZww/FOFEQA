@@ -219,10 +219,15 @@ class fofe_flex_all(nn.Module):
         
     def forward(self, x, x_mask):
         length = x.size(-2)
-        mask = torch.pow(self.alpha, x.new_tensor(x_mask.sum(1)).mul(-1)).unsqueeze(1).permute(2,0,1)
-        matrix = torch.pow(self.alpha, x.new_tensor(torch.linspace(length-1,0,length))).unsqueeze(1)
+        exponent = x.new_empty(x.size(0),1,length)
+        if self.inverse :
+            exponent.copy_(torch.range(0, length-1))
+        else:
+            exponent.copy_(torch.linspace(length-1,0,length))
+            exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
+        import pdb; pdb.set_trace()
+        matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
         fofe_code = F.conv1d(x.transpose(-1,-2), matrix, bias=None, stride=1, padding=0, groups = self.channels)
-        fofe_code = fofe_code.mul(mask)
         return fofe_code
 
 
@@ -363,9 +368,12 @@ class fofe_encoder(nn.Module):
         super(fofe_encoder, self).__init__()
         self.forward_filter = []
         self.inverse_filter = []
-        for i in range(fofe_max_length):
+        for i in range(fofe_max_length-1):
             self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1))
             self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+            
+        self.forward_filter.append(fofe_filter(emb_dim, fofe_alpha+0.2, fofe_max_length))
+        self.inverse_filter.append(fofe_filter(emb_dim, fofe_alpha+0.2, fofe_max_length, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
@@ -373,10 +381,6 @@ class fofe_encoder(nn.Module):
     def forward(self, x, max_len):
         forward_fofe = []
         inverse_fofe = []
-#        for forward_filter in self.forward_filter:
-#            forward_fofe.append(forward_filter(x).unsqueeze(-2))
-#        for inverse_filter in self.inverse_filter:
-#            inverse_fofe.append(inverse_filter(x).unsqueeze(-2))
         for i in range(max_len):
             forward_fofe.append(self.forward_filter[i](x).unsqueeze(-2))
             inverse_fofe.append(self.inverse_filter[i](x).unsqueeze(-2))
@@ -514,9 +518,12 @@ class fofe_multi_encoder(fofe_encoder):
         super(fofe_encoder, self).__init__()
         self.forward_filter = []
         self.inverse_filter = []
-        for i in range(fofe_max_length):
+        for i in range(fofe_max_length-1):
             self.forward_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1))
             self.inverse_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1, inverse=True))
+            
+        self.forward_filter.append(fofe_multi_filter(emb_dim, [fofe_alpha[0]+0.2], fofe_max_length))
+        self.inverse_filter.append(fofe_multi_filter(emb_dim, [fofe_alpha[0]+0.2], fofe_max_length, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
