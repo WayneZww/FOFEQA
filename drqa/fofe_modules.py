@@ -521,9 +521,9 @@ class fofe_multi_encoder(fofe_encoder):
         for i in range(fofe_max_length-1):
             self.forward_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1))
             self.inverse_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, i+1, inverse=True))
-            
-        self.forward_filter.append(fofe_multi_filter(emb_dim, [fofe_alpha[0]+0.2], fofe_max_length))
-        self.inverse_filter.append(fofe_multi_filter(emb_dim, [fofe_alpha[0]+0.2], fofe_max_length, inverse=True))
+        fofe_alpha[0]=fofe_alpha[0]+0.2
+        self.forward_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, fofe_max_length))
+        self.inverse_filter.append(fofe_multi_filter(emb_dim, fofe_alpha, fofe_max_length, inverse=True))
 
         self.forward_filter = nn.ModuleList(self.forward_filter)
         self.inverse_filter = nn.ModuleList(self.inverse_filter)
