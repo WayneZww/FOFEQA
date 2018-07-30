@@ -12,7 +12,7 @@ class FocalLoss(nn.Module):
         if rare_alpha is None:
             self.alpha = torch.ones(class_num, 1)
         else:
-            self.alpha = torch.Tensor([1-rare_alpha, rare_alpha]).unsqueeze(-1)
+            self.alpha = torch.Tensor([1, 1/rare_alpha]).unsqueeze(-1)
         self.gamma = gamma
         self.class_num = class_num
         self.size_average = size_average

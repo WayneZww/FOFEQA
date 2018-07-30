@@ -84,13 +84,13 @@ class FOFEReader(nn.Module):
             self.fnn = nn.Sequential(
                 nn.Conv1d((doc_input_size*3+opt['embedding_dim']*1)*2*len(opt['fofe_alpha']), opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2, inplace=True),
 #                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
@@ -101,7 +101,7 @@ class FOFEReader(nn.Module):
             self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         else:
             self.fl_loss = None
-        self.ce_loss = nn.CrossEntropyLoss()
+        self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         self.apply(self.weights_init)
         print(self) 
     #--------------------------------------------------------------------------------
