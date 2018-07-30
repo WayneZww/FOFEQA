@@ -339,7 +339,8 @@ class FOFEReader(nn.Module):
             if self.fl_loss is not None:
                 fl_loss = self.fl_loss(scores, target_score)
                 loss += fl_loss
- 
+            ce_loss = F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
+            loss += ce_loss
             return loss
         else :
 			# import pdb;pdb.set_trace()
