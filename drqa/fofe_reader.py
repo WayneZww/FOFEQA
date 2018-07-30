@@ -84,13 +84,13 @@ class FOFEReader(nn.Module):
             self.fnn = nn.Sequential(
                 nn.Conv1d((doc_input_size*3+opt['embedding_dim']*1)*2*len(opt['fofe_alpha']), opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2,inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2,inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(0.2,inplace=True),
 #                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
@@ -289,6 +289,9 @@ class FOFEReader(nn.Module):
             #     s_idxs.append(-1)
             #     e_idxs.append(-1)
             # else:
+            s_idxs.append(starts[idx.item()].item())                                                                                                                                                    
+            e_idxs.append(ends[idx.item()].item())
+
         return s_idxs, e_idxs
     
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
