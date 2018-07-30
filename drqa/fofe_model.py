@@ -135,6 +135,20 @@ class DocReaderModel(object):
                 import pdb;pdb.set_trace()
         #----------------------------------------------------------------------------
         return predictions
+    
+    def draw_predict(self, ex):
+        # Eval mode
+        self.network.eval()
+
+        # Transfer to GPU
+        if self.opt['cuda']:
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
+        else:
+            inputs = [Variable(e) for e in ex[:9]]
+
+        with torch.no_grad():
+            self.network(*inputs)
+
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores

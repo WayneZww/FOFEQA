@@ -104,6 +104,7 @@ class FOFEReader(nn.Module):
         self.ce_loss = nn.CrossEntropyLoss()
         self.apply(self.weights_init)
         print(self) 
+        self.count=0
     #--------------------------------------------------------------------------------
 
     def rank_tri_select(self, cands_ans_pos, scores, rejection_threshold=0.5):
@@ -211,7 +212,7 @@ class FOFEReader(nn.Module):
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
 
-        if self.training:
+        if target_s is not None:
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
             max_len = int(min(max(self.opt['max_len'], v+1), doc_len))
@@ -239,7 +240,7 @@ class FOFEReader(nn.Module):
             r_ctx_in_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
             forward_ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
             inverse_ans_batch.append(inverse_fofe[:, :, i, 0:doc_len-i])
-            if self.training:
+            if self.training or self.opt['draw_score']:
                 for j in range(batchsize):
                     ans_e = target_e[j].item()+1
                     ans_s = target_s[j].item()+1
@@ -268,14 +269,15 @@ class FOFEReader(nn.Module):
 
         dq_input = torch.cat([l_ctx_in_batch, l_ctx_ex_batch, forward_ans_batch, inverse_ans_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
 
-        if self.training:
+        if target_s is not None:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
-            return dq_input, target_score
         else:
             mask_batch = torch.cat(mask_batch, dim=-1)
             starts = torch.cat(starts, dim=0).long()
             ends = torch.cat(ends, dim=0).long()
             return dq_input, starts, ends, mask_batch
+
+        return dq_input, target_score
 
     def rank_select(self, scores, starts, ends):
         batchsize = scores.size(0)
@@ -287,16 +289,6 @@ class FOFEReader(nn.Module):
             #     s_idxs.append(-1)
             #     e_idxs.append(-1)
             # else:
-            """           
-            fig = plt.figure(figsize=(50,10))
-            ax = fig.add_subplot()
-            x = np.arange(scores[i].size(0))
-            y = scores[i].cpu().numpy()
-            plt.plot(x,y,'o-',label=u"线条")
-            plt.savefig(self.opt["model_dir"]+"/temp.png")  """   
-            s_idxs.append(starts[idx.item()].item())
-            e_idxs.append(ends[idx.item()].item())
-
         return s_idxs, e_idxs
     
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
@@ -330,7 +322,7 @@ class FOFEReader(nn.Module):
         query_mask = question padding mask          [batch * len_q]
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
-        if self.training :
+        if self.training and not self.opt['draw_score']:
             #--------------------------------------------------------------------------------            
             dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
@@ -339,23 +331,38 @@ class FOFEReader(nn.Module):
             if self.fl_loss is not None:
                 fl_loss = self.fl_loss(scores, target_score)
                 loss += fl_loss
- 
             return loss
-        else :
-			# import pdb;pdb.set_trace()
-            #--------------------------------------------------------------------------------
-            #dq_input, cands_ans_pos  = self.sample_via_fofe_tricontext(doc_emb, query_emb)
-            #score = self.fnn(dq_input)
-            #predict_s, predict_e = self.rank_tri_select(cands_ans_pos, score)
-            # return predict_s, predict_e
-            #--------------------------------------------------------------------------------
+        elif self.opt['draw_score']:
+            p = random.random()
+            if p <= 1/100:
+                dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+                scores = self.fnn(dq_input)
+                scores = F.softmax(scores, dim=1)
+                self.rank_draw(scores[:,1,:], target_score, doc_emb.size(1))
+        else:
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
             s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
            
-            return s_idxs, e_idxs 
+            return s_idxs, e_idxs
+
+    def rank_draw(self, scores, target, length):
+        batchsize = scores.size(0)  
+        idx = torch.argmax(target, dim=-1).cpu().numpy()
+        for i in range(batchsize): 
+            if i == 3:
+                self.count += 1
+                fig = plt.figure(figsize=(100,10))
+                ax = fig.add_subplot()
+                x = np.arange(scores[i].size(0))
+                y = scores[i].cpu().numpy()
+                plt.plot(x,y,'o-',label=u"Distribution")
+                plt.plot(idx[i],0,'ro-',label=u"Ground Truth")
+                plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png") 
+                plt.clf()   
+
           
             
 

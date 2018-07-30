@@ -47,8 +47,11 @@ def main():
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
             
         # Test  dev and total train
-        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
+        if args.draw_score:
+            test_draw(train, train_y, args, model, log, mode='train')
+            return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
+        dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
 
         if math.fabs(dev_em - checkpoint['em']) > 1e-3 or math.fabs(dev_f1 - checkpoint['f1']) > 1e-3:
             log.info('Inconsistent: recorded EM: {} F1: {}'.format(checkpoint['em'], checkpoint['f1']))
@@ -65,8 +68,6 @@ def main():
     sample_em_record = []
     sample_f1_record = []
     x_axis = []
-    fig = plt.figure(figsize=(8,6))
-    ax = fig.add_subplot()
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
         # train
@@ -102,7 +103,9 @@ def main():
         sample_f1_record.append(sample_em)
         x_axis.append(epoch)
 
-        if args.draw_score:
+        if args.draw_plot:
+            fig = plt.figure(figsize=(8,6))
+            ax = fig.add_subplot()
             x_axis_np = np.asarray(x_axis)
             plt.plot(x_axis_np,np.asarray(dev_em_record),'-',label="Dev EM")
             plt.plot(x_axis_np,np.asarray(dev_f1_record),'-',label="Dev F1")
@@ -120,9 +123,6 @@ def main():
             plt.legend()
             plt.savefig(args.model_dir+"/Test.png")
             plt.clf()
-
-        
-        
 
 
 def setup():
@@ -177,6 +177,8 @@ def setup():
     parser.add_argument('--fix_embeddings', action='store_true',
                         help='if true, `tune_partial` will be ignored.')
     parser.add_argument('--draw_score', action='store_true',
+                        help='if true, will draw test score')
+    parser.add_argument('--draw_plot', action='store_true',
                         help='if true, will draw test score')
 
     # model
@@ -325,11 +327,19 @@ def test_process(dev, dev_y, args, model, log, mode='dev'):
     return em, f1
 
 
+def test_draw(dev, dev_y, args, model, log, mode='dev'):
+    batches = BatchGen(dev, args.batch_size, evaluation=True, gpu=args.cuda, draw_score=args.draw_score)
+    for i, batch in enumerate(batches):
+        model.draw_predict(batch)
+        log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
+
+
+
 class BatchGen:
     pos_size = None
     ner_size = None
 
-    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False):
+    def __init__(self, data, batch_size, gpu, test_train=False, evaluation=False, draw_score=False):
         """
         input:
             data - list of lists
@@ -338,13 +348,13 @@ class BatchGen:
         self.batch_size = batch_size
         self.eval = evaluation
         self.gpu = gpu
-        self.test_train = test_train
+        self.test_train = test_train 
+        self.draw_score = draw_score
 
         # sort by len
         data = sorted(data, key=lambda x: len(x[1]))
         # chunk into batches
         data = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
-
         # shuffle
         if not evaluation:
             random.shuffle(data)
@@ -360,7 +370,7 @@ class BatchGen:
             batch_size = len(batch)
             batch = list(zip(*batch))
 
-            if self.eval and not self.test_train:
+            if self.eval and not self.test_train and not self.draw_score:
                 assert len(batch) == 8
             else:
                 assert len(batch) == 11
@@ -396,7 +406,7 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval:
+            if not self.eval or self.draw_score:
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.gpu:
@@ -407,7 +417,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval:
+            if self.eval and not self.draw_score:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, text, span)
             else:
