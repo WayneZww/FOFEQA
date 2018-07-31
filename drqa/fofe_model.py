@@ -122,14 +122,23 @@ class DocReaderModel(object):
         for i in range(len(predict_s_idx)):
             s_idx = predict_s_idx[i]
             e_idx = predict_e_idx[i]
-            #if s_idx < 0 or e_idx < 0:
-            #    predictions.append("<UNK>")
-            #else:
-            #    s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-            #    predictions.append(text[i][s_offset:e_offset])
             s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
             predictions.append(text[i][s_offset:e_offset])
         return predictions
+
+    def draw_predict(self, ex):
+        # Eval mode
+        self.network.eval()
+            
+        # Transfer to GPU
+        if self.opt['cuda']:
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
+        else:
+            inputs = [Variable(e) for e in ex[:9]]
+        
+        with torch.no_grad():
+            self.network(*inputs)
+
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores
