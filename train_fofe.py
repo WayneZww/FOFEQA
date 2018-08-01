@@ -100,7 +100,7 @@ def main():
         dev_em_record.append(dev_em) 
         dev_f1_record.append(dev_f1) 
         sample_em_record.append(sample_em)
-        sample_f1_record.append(sample_em)
+        sample_f1_record.append(sample_f1)
         x_axis.append(epoch)
 
         if args.draw_plot:
@@ -208,6 +208,8 @@ def setup():
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
+    parser.add_argument('--filter', default='fofe',
+                        help='Architecture for filter')
     parser.add_argument('--net_arch', default='FOFE_NN',
                         help='Architecture for NN')
 

@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
             
 
-from .fofe_modules import fofe_multi, fofe_multi_encoder
+from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
 from .utils import tri_num
@@ -60,8 +60,9 @@ class FOFEReader(nn.Module):
             doc_input_size += opt['pos_size']
         if opt['ner']:
             doc_input_size += opt['ner_size']
+        dq_input_size = (doc_input_size*3+opt['embedding_dim']*1)*2*len(opt['fofe_alpha'])
         #----------------------------------------------------------------------------
-        self.fofe_encoder = fofe_multi_encoder(doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
+        
         # NOTED: current doc_len_limit = 809
         """n_ctx_types = 1
         if (self.opt['contexts_incl_cand']):
@@ -75,22 +76,28 @@ class FOFEReader(nn.Module):
                                                               has_lr_ctx_cand_incl=self.opt['contexts_incl_cand'],
                                                               has_lr_ctx_cand_excl=self.opt['contexts_excl_cand'])"""
 
-        self.fofe_linear = fofe_multi(opt['embedding_dim'], opt['fofe_alpha'])
+        if opt['filter'] == 'fofe':
+            self.fofe_encoder = fofe_multi_encoder(fofe_filter, doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
+            self.fofe_linear = fofe_multi(fofe, opt['embedding_dim'], opt['fofe_alpha'])
+        elif opt['filter'] == 'flex_all':
+            self.fofe_encoder = fofe_multi_encoder(fofe_flex_all_filter, doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
+            self.fofe_linear = fofe_multi(fofe_flex_all, opt['embedding_dim'], opt['fofe_alpha'])
+
         if opt['net_arch'] == 'FNN':
-            self.fnn = FOFE_NN(doc_input_size*2, opt['hidden_size'])
+            self.fnn = FOFE_NN(dq_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
-            self.fnn = FOFE_NN_att(doc_input_size*2, opt['hidden_size'])
+            self.fnn = FOFE_NN_att(dq_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d((doc_input_size*3+opt['embedding_dim']*1)*2*len(opt['fofe_alpha']), opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Conv1d(dq_input_size, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2,inplace=True),
+                nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2,inplace=True),
+                nn.ReLU(inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2,inplace=True),
+                nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
             )
