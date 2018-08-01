@@ -329,11 +329,12 @@ class FOFEReader(nn.Module):
             #--------------------------------------------------------------------------------            
             dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            scores = self.fnn(dq_input)
+            scores = self.fnn(dq_input)            
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
-                fl_loss = self.fl_loss(scores, target_score)
-                loss += fl_loss
+                loss = loss + self.fl_loss(scores, target_score)
+            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
+
             return loss
         elif self.opt['draw_score']:
             p = random.random()

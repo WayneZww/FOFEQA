@@ -114,7 +114,13 @@ def main():
             dev_max_idx = np.argmax(np.asarray(dev_f1_record))
             sample_max_idx = np.argmax(np.asarray(sample_f1_record))
             plt.plot(dev_max_idx+1,dev_f1_record[dev_max_idx],'ro')
+            plt.annotate('['+str(dev_max_idx+1)+', '+str(dev_f1_record[dev_max_idx])+']',
+                         xytext=(dev_max_idx+1,dev_f1_record[dev_max_idx]),
+                         xy=(dev_max_idx+1,dev_f1_record[dev_max_idx]))
             plt.plot(sample_max_idx+1,sample_f1_record[sample_max_idx],'bo')
+            plt.annotate('['+str(sample_max_idx+1)+', '+str(sample_f1_record[sample_max_idx])+']', 
+                         xytext=(sample_max_idx+1,sample_f1_record[sample_max_idx]), 
+                         xy=(sample_max_idx+1,sample_f1_record[sample_max_idx]))
             plt.xlabel("Epoch")
             plt.xticks(np.arange(epoch_0, args.epochs+1, 5))
             plt.ylabel("Score")
