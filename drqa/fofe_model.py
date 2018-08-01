@@ -52,6 +52,7 @@ class DocReaderModel(object):
         # Building optimizer.
         self.opt_state_dict = state_dict['optimizer'] if state_dict else None
         self.build_optimizer()
+        self.count=0
 
     def build_optimizer(self):
         parameters = [p for p in self.network.parameters() if p.requires_grad]
@@ -147,8 +148,9 @@ class DocReaderModel(object):
             inputs = [Variable(e) for e in ex[:9]]
 
         with torch.no_grad():
-            self.network(*inputs)
-
+            scores, target_score = self.network(*inputs)
+        
+        self.rank_draw(scores, target_score, doc.size(-1))
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores
@@ -173,3 +175,18 @@ class DocReaderModel(object):
             logger.info('model saved to {}'.format(filename))
         except BaseException:
             logger.warning('[ WARN: Saving failed... continuing anyway. ]')
+    
+    def rank_draw(self, scores, target, length):
+        batchsize = scores.size(0)  
+        idx = torch.argmax(target, dim=-1).cpu().numpy()
+        for i in range(batchsize): 
+            if i == 3:
+                self.count += 1
+                fig = plt.figure(figsize=(100,10))
+                ax = fig.add_subplot()
+                x = np.arange(scores[i].size(0))
+                y = scores[i].cpu().numpy()
+                plt.plot(x,y,'o-',label=u"Distribution")
+                plt.plot(idx[i],0,'ro-',label=u"Ground Truth")
+                plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png") 
+                plt.clf()   

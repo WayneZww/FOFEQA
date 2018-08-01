@@ -349,7 +349,7 @@ class FOFEReader(nn.Module):
                 dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
                 scores = self.fnn(dq_input)
                 scores = F.softmax(scores, dim=1)
-                self.rank_draw(scores[:,1,:], target_score, doc_emb.size(1))
+                return scores[:,1,:], target_score
         else:
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
             scores = self.fnn(dq_input)
@@ -359,20 +359,7 @@ class FOFEReader(nn.Module):
            
             return s_idxs, e_idxs
 
-    def rank_draw(self, scores, target, length):
-        batchsize = scores.size(0)  
-        idx = torch.argmax(target, dim=-1).cpu().numpy()
-        for i in range(batchsize): 
-            if i == 3:
-                self.count += 1
-                fig = plt.figure(figsize=(100,10))
-                ax = fig.add_subplot()
-                x = np.arange(scores[i].size(0))
-                y = scores[i].cpu().numpy()
-                plt.plot(x,y,'o-',label=u"Distribution")
-                plt.plot(idx[i],0,'ro-',label=u"Ground Truth")
-                plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png") 
-                plt.clf()   
+    
 
           
             
