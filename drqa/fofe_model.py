@@ -153,10 +153,10 @@ class DocReaderModel(object):
             spans = ex[-1]
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
-            self.rank_cand_draw(score, target_score, batch_size, length, cands_ans_pos, text, spans)
+            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, text, spans)
 
 
-    def rank_cand_draw(self, scores, target, batch_size, length, cands_pos, text, spans):
+    def draw_scores(self, scores, target, batch_size, length, cands_pos, text, spans):
         n_cands = target.size(-1)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
