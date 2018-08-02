@@ -3,8 +3,6 @@
 # Origin: https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents/drqa
 
 import random
-import numpy as np
-import matplotlib.pyplot as plt
 import torch as torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -91,7 +89,6 @@ class FOFEReader(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False)
         )
-        self.count=0
 
     def rank_cand_select(self, cands_ans_pos, scores, batch_size):
         n_cands = cands_ans_pos.size(0)
@@ -111,38 +108,19 @@ class FOFEReader(nn.Module):
             predict_e.append(_predict_e)
         return predict_s, predict_e
             
-    def rank_cand_draw(self, scores, target, batch_size, length):
-        n_cands = target.size(-1)
-        assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
-        n_cands_per_batch = round(n_cands / batch_size)
-
-        x_predict = np.arange(n_cands_per_batch)
-        for i in range(batch_size):
-            self.count += 1
-            fig = plt.figure(figsize=(100,10))
-            ax = fig.add_subplot()
-
-            base_idx = i*n_cands_per_batch
-            y_predict = scores[base_idx:base_idx+n_cands_per_batch].cpu().numpy()
-            _, x_target = target[base_idx:base_idx+n_cands_per_batch].max(dim=0)
-            
-            plt.plot(x_predict, y_predict, 'o-', label=u"Distribution")
-            plt.plot(x_target.item(), 0, 'ro-', label=u"Ground Truth")
-            plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
-            plt.clf()
-
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, train_mode=True):
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, test_mode=False):
+        train_mode = (target_s is not None) and (target_e is not None)
         n_fofe_alphas = len(self.opt['fofe_alpha'].split(','))
         dq_fofes = []
-
+        
         # 1. Construct FOFE Doc & Query Inputs Matrix
-        if train_mode:
+        if test_mode:
             for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
-                _doc_fofe = d_fofe_encoder(doc_emb, doc_mask)
+                _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask, True)
                 dq_fofes.append(_doc_fofe)
         else:
             for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
-                _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask, not train_mode)
+                _doc_fofe = d_fofe_encoder(doc_emb, doc_mask, False)
                 dq_fofes.append(_doc_fofe)
 
         batch_size = _doc_fofe.size(0)
@@ -160,7 +138,6 @@ class FOFEReader(nn.Module):
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 
         if train_mode:
-            assert (target_s is not None) and (target_e is not None), "This is supervise learning, must have target during training"
             target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
             _samples_idx = []
             
@@ -217,17 +194,25 @@ class FOFEReader(nn.Module):
             # 2.1.3. Reshape samples_dq_input and samples_target_score to work on conv1d (instead of linear)
             samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
             samples_target_score = samples_target_score.transpose(-1,-2).long()
-            
-            return samples_dq_input, samples_target_score
-        else:
+
+        if test_mode:
             # 2.2.1 Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
             padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
             
             # 2.2.2. Reshape dq_input to work on conv1d (instead of linear)
             dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
-            
+        
+        # 3. Determine what to return base on mode:
+        if (train_mode) and (not test_mode):
+            return samples_dq_input, samples_target_score
+        elif (not train_mode) and (test_mode):
             return dq_input, cands_ans_pos, padded_cands_mask
+        elif (train_mode) and (test_mode):
+            return samples_dq_input, samples_target_score, cands_ans_pos, padded_cands_mask
+        else:
+            raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
+                             test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
 
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
         # Embed both document and question
@@ -261,26 +246,21 @@ class FOFEReader(nn.Module):
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training and not self.opt['draw_score']:
-            
-            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, self.training)
+            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
             score = self.fnn(dq_input)
             score = F.log_softmax(score, dim=1)
             loss = F.nll_loss(score, target_score)
             #import pdb;pdb.set_trace()
             return loss
         elif self.opt['draw_score']:
-            p = random.random()
-            if p <= 1/100:
-                dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, self.opt['draw_score'])
-                score = self.fnn(dq_input)
-                score = F.softmax(score, dim=1)
-                score = score[:,1,:].squeeze(0)
-                target_score = target_score.squeeze(0)
-                batch_size = query.size(0)
-                length = doc_emb.size(1)
-                self.rank_cand_draw(score, target_score, batch_size, length)
-        else :
-            dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, train_mode=self.training)
+            dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
+            score = self.fnn(dq_input)
+            score = F.softmax(score, dim=1)
+            score = score[:,1,:].squeeze(0)
+            target_score = target_score.squeeze(0)
+            return score, target_score, cands_ans_pos, padded_cands_mask
+        else:
+            dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
             score = self.fnn(dq_input)
             score = F.softmax(score, dim=1)
             score = score[:,1:,:].squeeze(0).squeeze(0)

@@ -4,10 +4,15 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 import random
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+# NOTE: matplotlib.use('Agg') set matplotlib to ignore the display, \
+#       since it cause problem during remote execution and we don't need to display it.
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
 import logging
 
 from torch.autograd import Variable
@@ -38,6 +43,7 @@ class DocReaderModel(object):
         self.train_loss = AverageMeter()
         if state_dict:
             self.train_loss.load(state_dict['loss'])
+        self.count = 0
 
         # Building network.
         self.network = FOFEReader(opt, embedding=embedding)
@@ -136,9 +142,49 @@ class DocReaderModel(object):
         else:
             inputs = [Variable(e) for e in ex[:9]]
         
-        with torch.no_grad():
-            self.network(*inputs)
+        p = random.random()
+        if p <= 1/100:
+            # Run forward
+            with torch.no_grad():
+                score, target_score, cands_ans_pos, padded_cands_mask = self.network(*inputs)
 
+            # Plots Candidate Scores (compare with Target Score)
+            text = ex[-2]
+            spans = ex[-1]
+            length = inputs[0].size(-1)
+            batch_size = inputs[0].size(0)
+            self.rank_cand_draw(score, target_score, batch_size, length, cands_ans_pos, padded_cands_mask, text, spans)
+
+
+    def rank_cand_draw(self, scores, target, batch_size, length, cands_pos, padded_cands, text, spans):
+        n_cands = target.size(-1)
+        assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
+        n_cands_per_batch = round(n_cands / batch_size)
+        
+        x_predict = np.arange(n_cands_per_batch)
+        for i in range(batch_size):
+            self.count += 1
+            fig = plt.figure(figsize=(100,10))
+            ax = fig.add_subplot()
+            
+            base_idx = i*n_cands_per_batch
+            y_predict = scores[base_idx:base_idx+n_cands_per_batch].cpu().numpy()
+            _, x_target = target[base_idx:base_idx+n_cands_per_batch].max(dim=0)
+            
+            plt.plot(x_predict, y_predict, 'o-', label=u"Distribution")
+            plt.plot(x_target.item(), 0, 'ro-', label=u"Ground Truth")
+            plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
+            plt.clf()
+            
+            """
+            TODO: Also print the Text of Top scoring candidates
+            import pdb;pdb.set_trace()
+            top_scores, top_idxs = scores[base_idx:base_idx+n_cands_per_batch].topk(5, dim=0)
+            top_cands_pos = cands_pos[base_idx:base_idx+n_cands_per_batch].index_select(0, top_idxs)
+            top_padded_cands = padded_cands[base_idx:base_idx+n_cands_per_batch].index_select(0, top_idxs)
+            TODO: text[i]
+            TODO: spans[i]
+            """
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores

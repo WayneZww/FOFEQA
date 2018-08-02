@@ -47,9 +47,6 @@ def main():
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
             
         # Test dev and total train
-        if args.draw_score:
-            test_draw(train, train_y, args, model, log, mode='train')
-            return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
 
@@ -62,20 +59,26 @@ def main():
         model = DocReaderModel(opt, embedding)
         epoch_0 = 1
         best_val_score = 0.0
+
+    # Draw Score (NOTED: current assumption will exit end the program after finish draw score.)
+    if args.draw_score:
+        test_draw(train, train_y, args, model, log, mode='train')
+        return
+
     dev_em_record = []
     dev_f1_record = []
     sample_em_record = []
     sample_f1_record = []
     x_axis = []
-
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
-        # train
+        # Train
         if not args.test_only:
             train_process(train, epoch, args, model, log)
 
         if args.test_only and args.resume:
-            break         
+            break
+
         # Test on Dev Set
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
         # Test on sampled train set
