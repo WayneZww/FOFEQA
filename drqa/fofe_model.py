@@ -4,10 +4,15 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 import random
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+# NOTE: matplotlib.use('Agg') set matplotlib to ignore the display, \
+#       since it cause problem during remote execution and we don't need to display it.
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
 import logging
 
 from torch.autograd import Variable
@@ -38,6 +43,7 @@ class DocReaderModel(object):
         self.train_loss = AverageMeter()
         if state_dict:
             self.train_loss.load(state_dict['loss'])
+        self.count = 0
 
         # Building network.
         self.network = FOFEReader(opt, embedding=embedding)
@@ -57,16 +63,26 @@ class DocReaderModel(object):
     def build_optimizer(self):
         parameters = [p for p in self.network.parameters() if p.requires_grad]
         if self.opt['optimizer'] == 'sgd':
-            self.optimizer = optim.SGD(parameters, self.opt['learning_rate'],
+            self.optimizer = optim.SGD(parameters,
+                                       self.opt['learning_rate'],
                                        momentum=self.opt['momentum'],
                                        weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adamax':
             self.optimizer = optim.Adamax(parameters,
+                                          self.opt['learning_rate'],
                                           weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adam':
             print("adam eps is:" + str(self.opt['adam_eps']))
             self.optimizer = optim.Adam(parameters, eps=self.opt['adam_eps'],
                                           weight_decay=self.opt['weight_decay'])
+        elif self.opt['optimizer'] == 'adadelta':
+            self.optimizer = optim.Adadelta(parameters,
+                                           self.opt['learning_rate'],
+                                           weight_decay=self.opt['weight_decay'])
+        elif self.opt['optimizer'] == 'adagrad':
+            self.optimizer = optim.Adagrad(parameters,
+                                           self.opt['learning_rate'],
+                                           weight_decay=self.opt['weight_decay'])
         else:
             raise RuntimeError('Unsupported optimizer: %s' % self.opt['optimizer'])
         if self.opt_state_dict:
@@ -102,8 +118,6 @@ class DocReaderModel(object):
         else:
             inputs = [Variable(e) for e in ex[:7]]
 
-        #----------------------------------------------------------------------------
-        #TODO @SED: CHECK THE PREDICTION
         # Run forward
         with torch.no_grad():
             predict_s_idx, predict_e_idx = self.network(*inputs)
@@ -113,29 +127,10 @@ class DocReaderModel(object):
         spans = ex[-1]
         predictions = []
         for i in range(len(predict_s_idx)):
-            try:
-                s_idx = predict_s_idx[i]
-                e_idx = predict_e_idx[i]
-                #if s_idx < 0 or e_idx < 0:
-                #    predictions.append("<UNK>")
-                #else:
-                #    s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-                #    predictions.append(text[i][s_offset:e_offset])
-                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-                predictions.append(text[i][s_offset:e_offset])
-            except Exception as e:
-                #TODO @SED: CURRENT HAVE PROBLEM OF SOMETIME PREDICTING AN OUT OF BOUND, WHEN BATCHSIZE > 1
-                #           -Suspect that it predict the padding, since we test without training.
-                print("--------------------------------------------------------------")
-                print(e)
-                print("s_idx:", s_idx)
-                print("e_idx:", e_idx)
-                print("spans[i]:", spans[i])
-                print("spans:", spans)
-                print("text", text)
-                predictions.append("<PAD>")
-                import pdb;pdb.set_trace()
-        #----------------------------------------------------------------------------
+            s_idx = predict_s_idx[i]
+            e_idx = predict_e_idx[i]
+            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            predictions.append(text[i][s_offset:e_offset])
         return predictions
     
     def draw_predict(self, ex):
@@ -152,6 +147,83 @@ class DocReaderModel(object):
             scores, target_score = self.network(*inputs)
         
         self.rank_draw(scores, target_score, doc.size(-1))
+
+    def draw_predict(self, ex):
+        # Eval mode
+        self.network.eval()
+            
+        # Transfer to GPU
+        if self.opt['cuda']:
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
+        else:
+            inputs = [Variable(e) for e in ex[:9]]
+        
+        p = random.random()
+        if p <= 1/100:
+            # Run forward
+            with torch.no_grad():
+                score, target_score, cands_ans_pos, _ = self.network(*inputs)
+
+            # Plots Candidate Scores (compare with Target Score)
+            text = ex[-2]
+            spans = ex[-1]
+            length = inputs[0].size(-1)
+            batch_size = inputs[0].size(0)
+            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, text, spans)
+
+
+    def draw_scores(self, scores, target, batch_size, length, cands_pos, text, spans):
+        n_cands = target.size(-1)
+        assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
+        n_cands_per_batch = round(n_cands / batch_size)
+        
+        x_predict = np.arange(n_cands_per_batch)
+        for i in range(batch_size):
+            self.count += 1
+            fig = plt.figure(figsize=(100,10))
+            ax = fig.add_subplot()
+            
+            base_idx = i*n_cands_per_batch
+            y_predict = scores[base_idx:base_idx+n_cands_per_batch].cpu().numpy()
+            _, x_target = target[base_idx:base_idx+n_cands_per_batch].max(dim=0)
+            
+            plt.plot(x_predict, y_predict, 'o-', label=u"Distribution")
+            plt.plot(x_target.item(), 0, 'ro-', label=u"Ground Truth")
+            plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
+            plt.clf()
+            
+            #
+            #TODO @SED: TEST THESE CODE, HAVEN'T ENSURE CORRECTNESS YET ------------------------------
+            f = open(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".txt", 'w+')
+            
+            # Print the Text of Top scoring candidates
+            top_scores, top_idxs = scores[base_idx:base_idx+n_cands_per_batch].topk(5, dim=0)
+            top_cands_pos = cands_pos[base_idx:base_idx+n_cands_per_batch]\
+                                .index_select(0, top_idxs)\
+                                .int()
+            top_predict_s_idx = top_cands_pos[:,0]
+            top_predict_e_idx = top_cands_pos[:,1]
+            
+            f.write("top_predictions:\n")
+            for j in range(top_predict_s_idx.size(0)):
+                s_idx = top_predict_s_idx[j].item()
+                e_idx = top_predict_e_idx[j].item()
+                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+                predict_text = text[i][s_offset:e_offset]
+                f.write("\t"+predict_text+"\n")
+            
+            # Print the Text of target.
+            target_pos = cands_pos[base_idx:base_idx+n_cands_per_batch][x_target].int()
+            s_idx = target_pos[0].item()
+            e_idx = target_pos[1].item()
+            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            target_text = text[i][s_offset:e_offset]
+            f.write("target_text:\n\t"+target_text)
+            
+            f.close()
+            #import pdb;pdb.set_trace()
+            #----------------------------------------------------------------------------------------
+
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores

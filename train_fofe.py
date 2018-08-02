@@ -70,7 +70,7 @@ def main():
     x_axis = []
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
-        # train
+        # Train
         if not args.test_only:
             train_process(train, epoch, args, model, log)
 
@@ -138,9 +138,9 @@ def setup():
     # system
     parser.add_argument('--log_per_updates', type=int, default=5,
                         help='log model loss per x updates (mini-batches).')
-    parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
+    parser.add_argument('--data_file', default='./data/SQuAD-v1.1/data.msgpack',
                         help='path to preprocessed data file.')
-    parser.add_argument('--meta_file', default='./data/SQuAD/meta.msgpack',
+    parser.add_argument('--meta_file', default='./data/SQuAD-v1.1/meta.msgpack',
                         help='path to preprocessed data file.')
     parser.add_argument('--model_dir', default='models',
                         help='path to store saved models.')
@@ -206,7 +206,7 @@ def setup():
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
-                        help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
+                        help='use comma as separator for dual-fofe; (e.g. 0.4 0.8).')
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
@@ -494,4 +494,3 @@ def score(pred, truth):
 
 if __name__ == '__main__':
     main()
-
