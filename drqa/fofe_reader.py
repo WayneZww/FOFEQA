@@ -110,7 +110,7 @@ class FOFEReader(nn.Module):
             self.fl_loss = None
         self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         self.apply(self.weights_init)
-        print(self) 
+        #print(self) 
         self.count=0
     #--------------------------------------------------------------------------------
 

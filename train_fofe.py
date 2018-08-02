@@ -174,6 +174,8 @@ def setup():
     parser.add_argument('-op', '--optimizer', default='adamax',
                         help='supported optimizer: adamax, sgd')
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
+    parser.add_argument('-ae', '--adam_eps', type=float, default=1e-08,
+                        help='adam eps.')
     parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
                         help='only applied to SGD.')
     parser.add_argument('-mm', '--momentum', type=float, default=0,
@@ -186,7 +188,7 @@ def setup():
                         help='if true, will draw test score')
     parser.add_argument('--draw_plot', action='store_true',
                         help='if true, will draw test score')
-
+    
     # model
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that include Candidates')
