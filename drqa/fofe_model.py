@@ -146,17 +146,17 @@ class DocReaderModel(object):
         if p <= 1/100:
             # Run forward
             with torch.no_grad():
-                score, target_score, cands_ans_pos, padded_cands_mask = self.network(*inputs)
+                score, target_score, cands_ans_pos, _ = self.network(*inputs)
 
             # Plots Candidate Scores (compare with Target Score)
             text = ex[-2]
             spans = ex[-1]
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
-            self.rank_cand_draw(score, target_score, batch_size, length, cands_ans_pos, padded_cands_mask, text, spans)
+            self.rank_cand_draw(score, target_score, batch_size, length, cands_ans_pos, text, spans)
 
 
-    def rank_cand_draw(self, scores, target, batch_size, length, cands_pos, padded_cands, text, spans):
+    def rank_cand_draw(self, scores, target, batch_size, length, cands_pos, text, spans):
         n_cands = target.size(-1)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
@@ -176,15 +176,38 @@ class DocReaderModel(object):
             plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
             plt.clf()
             
-            """
-            TODO: Also print the Text of Top scoring candidates
-            import pdb;pdb.set_trace()
+            #
+            #TODO @SED: TEST THESE CODE, HAVEN'T ENSURE CORRECTNESS YET ------------------------------
+            f = open(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".txt", 'w+')
+            
+            # Print the Text of Top scoring candidates
             top_scores, top_idxs = scores[base_idx:base_idx+n_cands_per_batch].topk(5, dim=0)
-            top_cands_pos = cands_pos[base_idx:base_idx+n_cands_per_batch].index_select(0, top_idxs)
-            top_padded_cands = padded_cands[base_idx:base_idx+n_cands_per_batch].index_select(0, top_idxs)
-            TODO: text[i]
-            TODO: spans[i]
-            """
+            top_cands_pos = cands_pos[base_idx:base_idx+n_cands_per_batch]\
+                                .index_select(0, top_idxs)\
+                                .int()
+            top_predict_s_idx = top_cands_pos[:,0]
+            top_predict_e_idx = top_cands_pos[:,1]
+            
+            f.write("top_predictions:\n")
+            for j in range(top_predict_s_idx.size(0)):
+                s_idx = top_predict_s_idx[j].item()
+                e_idx = top_predict_e_idx[j].item()
+                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+                predict_text = text[i][s_offset:e_offset]
+                f.write("\t"+predict_text+"\n")
+            
+            # Print the Text of target.
+            target_pos = cands_pos[base_idx:base_idx+n_cands_per_batch][x_target].int()
+            s_idx = target_pos[0].item()
+            e_idx = target_pos[1].item()
+            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            target_text = text[i][s_offset:e_offset]
+            f.write("target_text:\n\t"+target_text)
+            
+            f.close()
+            #import pdb;pdb.set_trace()
+            #----------------------------------------------------------------------------------------
+
 
     def save(self, filename, epoch, scores):
         em, f1, best_eval = scores
