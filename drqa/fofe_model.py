@@ -149,15 +149,17 @@ class DocReaderModel(object):
                 score, target_score, cands_ans_pos, _ = self.network(*inputs)
 
             # Plots Candidate Scores (compare with Target Score)
+            target_s_idx = ex[-4]
+            target_e_idx = ex[-3]
             text = ex[-2]
             spans = ex[-1]
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
-            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, text, spans)
+            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, text, spans, target_s_idx, target_e_idx)
 
 
-    def draw_scores(self, scores, target, batch_size, length, cands_pos, text, spans):
-        n_cands = target.size(-1)
+    def draw_scores(self, scores, target, batch_size, length, cands_pos, text, spans, target_s_idx, target_e_idx):
+        n_cands = cands_pos.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
         
@@ -177,7 +179,7 @@ class DocReaderModel(object):
             plt.clf()
             
             #
-            #TODO @SED: TEST THESE CODE, HAVEN'T ENSURE CORRECTNESS YET ------------------------------
+            #TODO @SED: this is quick implementation; it's too messy, try put in other function --------------------------
             f = open(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".txt", 'w+')
             
             # Print the Text of Top scoring candidates
@@ -188,25 +190,33 @@ class DocReaderModel(object):
             top_predict_s_idx = top_cands_pos[:,0]
             top_predict_e_idx = top_cands_pos[:,1]
             
-            f.write("top_predictions:\n")
+            f.write("top_predictions & scores:\n")
             for j in range(top_predict_s_idx.size(0)):
                 s_idx = top_predict_s_idx[j].item()
                 e_idx = top_predict_e_idx[j].item()
                 s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
                 predict_text = text[i][s_offset:e_offset]
-                f.write("\t"+predict_text+"\n")
+                f.write("\t{0}\t{1}\n".format(top_scores[j], predict_text))
             
-            # Print the Text of target.
+            # Print the Text of target (used in training).
+            f.write("target_text (used in training):\n")
             target_pos = cands_pos[base_idx:base_idx+n_cands_per_batch][x_target].int()
             s_idx = target_pos[0].item()
             e_idx = target_pos[1].item()
             s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-            target_text = text[i][s_offset:e_offset]
-            f.write("target_text:\n\t"+target_text)
+            target_text_in_training = text[i][s_offset:e_offset]
+            f.write("\t{0}\n".format(target_text_in_training))
             
+            # Print the Text of target (from data); should be same as in training, but double check it.
+            f.write("target_text (from data):\n")
+            s_idx = target_s_idx[i].item()
+            e_idx = target_e_idx[i].item()
+            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
+            target_text_in_data = text[i][s_offset:e_offset]
+            f.write("\t{0}\n".format(target_text_in_data))
             f.close()
             #import pdb;pdb.set_trace()
-            #----------------------------------------------------------------------------------------
+            #-------------------------------------------------------------------------------------------------------------
 
 
     def save(self, filename, epoch, scores):

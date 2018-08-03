@@ -137,6 +137,7 @@ class FOFEReader(nn.Module):
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 
+        # 2. In train_mode: Build Target Scores Matrix, and then Sampling.
         if train_mode:
             target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
             _samples_idx = []
@@ -160,7 +161,7 @@ class FOFEReader(nn.Module):
                 n_neg_samples = sample_num - n_pos_samples
             
             for i in range(target_s.size(0)):
-                # 2.1.1. Build Target Scores Matrix.
+                # 2.1. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
@@ -173,7 +174,7 @@ class FOFEReader(nn.Module):
                             .get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
                 target_score[ans_idx] = 1
                 
-                # 2.1.2. Sampling
+                # 2.2. Sampling
                 #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
                 #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
                 if n_pos_samples == 1 and sample_num == n_cands_ans:
@@ -191,25 +192,28 @@ class FOFEReader(nn.Module):
             samples_dq_input = dq_input.index_select(0, samples_idx)
             samples_target_score = target_score.index_select(0, samples_idx)
 
-            # 2.1.3. Reshape samples_dq_input and samples_target_score to work on conv1d (instead of linear)
-            samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
-            samples_target_score = samples_target_score.transpose(-1,-2).long()
-
+        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask.
         if test_mode:
-            # 2.2.1 Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
+            # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
             padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
-            
-            # 2.2.2. Reshape dq_input to work on conv1d (instead of linear)
-            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
-        
-        # 3. Determine what to return base on mode:
+
+        # 3. Determine what to return base on mode
+        #    NOTE: also reshape dq_input and target_score to match conv1d (instead of linear)
         if (train_mode) and (not test_mode):
+            # 3.1. Train Mode
+            samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
+            samples_target_score = samples_target_score.transpose(-1,-2).long()
             return samples_dq_input, samples_target_score
         elif (not train_mode) and (test_mode):
+            # 3.2. Test Mode
+            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
             return dq_input, cands_ans_pos, padded_cands_mask
         elif (train_mode) and (test_mode):
-            return samples_dq_input, samples_target_score, cands_ans_pos, padded_cands_mask
+            # 3.3. Draw Score Mode (aka for debuging)
+            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
+            target_score = target_score.transpose(-1,-2).long()
+            return dq_input, target_score, cands_ans_pos, padded_cands_mask
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
                              test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
