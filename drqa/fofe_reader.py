@@ -10,10 +10,9 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
             
 
-from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter
+from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter, bidirect_fofe_tricontext, bidirect_fofe
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
-from .fofe_modules import bidirect_fofe_tricontext, bidirect_fofe
 from .utils import tri_num
 from .focal_loss import FocalLoss1d
 
@@ -111,7 +110,7 @@ class FOFEReader(nn.Module):
             self.fl_loss = None
         self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         self.apply(self.weights_init)
-        #print(self) 
+        print(self) 
         self.count=0
     #--------------------------------------------------------------------------------
 
@@ -251,7 +250,7 @@ class FOFEReader(nn.Module):
             r_ctx_in_batch.append(inverse_fofe[:, :, -1, 0:doc_len-i])
             forward_ans_batch.append(forward_fofe[:, :, i, 1+i:doc_len+1])
             inverse_ans_batch.append(inverse_fofe[:, :, i, 0:doc_len-i])
-            if self.training or self.opt['draw_score']:
+            if target_s is not None:
                 for j in range(batchsize):
                     ans_e = target_e[j].item()+1
                     ans_s = target_s[j].item()+1
@@ -259,10 +258,10 @@ class FOFEReader(nn.Module):
                     if ans_len == i+1:
                         can_score[j, :, i, ans_e:ans_s+i+1].fill_(1)
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
-            else:
-                mask_batch.append(doc_mask[:, i:])
-                starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
-                ends.append(torch.arange(i, doc_len, device=doc_emb.device))
+
+            mask_batch.append(doc_mask[:, i:])
+            starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
+            ends.append(torch.arange(i, doc_len, device=doc_emb.device))
 
         l_ctx_in_batch =torch.cat(l_ctx_in_batch, dim=-1)
         l_ctx_ex_batch =torch.cat(l_ctx_ex_batch, dim=-1)
@@ -280,15 +279,15 @@ class FOFEReader(nn.Module):
 
         dq_input = torch.cat([l_ctx_in_batch, l_ctx_ex_batch, forward_ans_batch, inverse_ans_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
 
+        mask_batch = torch.cat(mask_batch, dim=-1)
+        starts = torch.cat(starts, dim=0).long()
+        ends = torch.cat(ends, dim=0).long()
         if target_s is not None:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
-        else:
-            mask_batch = torch.cat(mask_batch, dim=-1)
-            starts = torch.cat(starts, dim=0).long()
-            ends = torch.cat(ends, dim=0).long()
-            return dq_input, starts, ends, mask_batch
+            return dq_input, target_score, starts, ends, mask_batch
 
-        return dq_input, target_score
+        return dq_input, starts, ends, mask_batch
+      
 
     def rank_select(self, scores, starts, ends):
         batchsize = scores.size(0)
@@ -338,6 +337,7 @@ class FOFEReader(nn.Module):
         if self.training and not self.opt['draw_score']:
             #--------------------------------------------------------------------------------            
             dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            assert target_score.sum(-1).sum(-1) == 4
             #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
             scores = self.fnn(dq_input)            
             loss = self.ce_loss(scores, target_score)
@@ -346,12 +346,16 @@ class FOFEReader(nn.Module):
             loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
             return loss
         elif self.opt['draw_score']:
-            p = random.random()
-            if p <= 1/100:
-                dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
-                scores = self.fnn(dq_input)
-                scores = F.softmax(scores, dim=1)
-                return scores[:,1,:], target_score
+            #p = random.random()
+            #if p <= 1/100:
+            dq_input, target_score, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
+            target_score = target_score.float()
+            target_score.data.masked_fill_(d_mask.data, -float('inf'))
+            s_idxs, e_idxs = self.rank_select(target_score, starts, ends)
+            return s_idxs, e_idxs
+            #return scores[:,1,:], target_score
             """
             dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
             score = self.fnn(dq_input)
