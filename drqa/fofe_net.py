@@ -39,87 +39,44 @@ class BottleNeck(nn.Module):
 
 
 class FOFENet(nn.Module):
-    def _make_layer(self, block, inplanes, planes, blocks, block_convs, 
-            fofe_alpha=0.8, fofe_max_length=3, stride=1, moduleList=False):
-        downsample = None
-        if stride != 1 or inplanes != planes:
-            downsample = nn.Sequential(
-                nn.Conv1d(inplanes, planes,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm1d(planes),
-            )
-
-        layers = []
-        layers.append(block(inplanes, planes, block_convs, fofe_alpha, fofe_max_length, downsample=downsample))
-        for i in range(1, blocks):
-            layers.append(block(planes, planes, block_convs, fofe_alpha, fofe_max_length))
-
-        if moduleList :
-            return nn.ModuleList(layers)
-        else : 
-            return nn.Sequential(*layers)
-        
-    def __init__(self, block, emb_dims, channels, fofe_alpha=0.8, fofe_max_length=3, 
-                    att_bidirection=False, att_q2c=True, training=True):
+    def __init__(self, dq_input_size, hidden_size):
         super(FOFENet, self).__init__()
-        #self.inplanes=emb_dims
-        self.att_bidirection = att_bidirection
-        self.att_q2c = att_q2c
+        self.feats_extractor = nn.Sequential(
+            nn.Conv1d(dq_input_size, hidden_size, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(hidden_size, hidden_size, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.coarse_classifier = nn.Sequential(
+            nn.Conv1d(hidden_size, hidden_size, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(hidden_size, 2, 1, 1, bias=False),
+        )
+        self.fine_classifier = nn.Sequential(
+            nn.Conv1d(hidden_size, hidden_size, 1, 1, bias=False),
+            nn.BatchNorm1d( hidden_size),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(hidden_size, 2, 1, 1, bias=False),
+        )
 
-        self.doc_fofe = self._make_layer(block, emb_dims, channels, 6, 3, fofe_alpha, fofe_max_length)
-        self.query_fofe = self._make_layer(block, emb_dims, channels, 3, 1, fofe_alpha, fofe_max_length)
-        self.attention = Attention(channels, att_q2c, att_bidirection)
-        self.output_encoder = self._make_layer(block, channels*4, channels, 3, 3, fofe_alpha, fofe_max_length, moduleList=True)
+    def forward(self, x, d_mask):
+        feats = self.feats_extractor(x)
+        coarse_score = self.coarse_classifier(feats)
+        coarse_cans = F.softmax(coarse_score, dim=1)
+        coarse_cans[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+        _, position = torch.topk(coarse_cans[:,1,:], 10, dim=-1, sorted=False)
 
-        self.pointer_s = nn.Conv1d(channels*2, 1, 1, bias=False)
-        self.pointer_e = nn.Conv1d(channels*2, 1, 1, bias=False)
+        candidates = []
+        for i in range(position.size(0)):
+            candidates.append(torch.index_select(feats[i], dim=-1, index=position[i]).unsqueeze(0))
 
-    def out_encode(self, x):
-        s_score = []
-        e_score = []
-        idx = 0
-        for encoder in self.output_encoder:
-            idx += 1
-            x = encoder(x)
-            if idx == 1:
-                s_score.append(x)
-                e_score.append(x)
-            elif idx == 2:
-                s_score.append(x)
-            elif idx == 3:
-                e_score.append(x)
-    
-        s_score = torch.cat(s_score, dim=1)
-        e_score = torch.cat(e_score, dim=1)
+        candidates = torch.cat(candidates, dim=0)
+        final_score = self.fine_classifier(candidates)
 
-         # calculate scores for begin and end point
-        s_score = self.pointer_s(s_score).squeeze(-2)
-        e_score = self.pointer_e(e_score).squeeze(-2)
-
-        return (s_score, e_score)
-
-    def forward(self, query_emb, query_mask, doc_emb, doc_mask):
-        query_emb = torch.transpose(query_emb,-2,-1)
-        doc_emb = torch.transpose(doc_emb,-2,-1)
-        q_code = self.query_fofe(query_emb)
-        d_code = self.doc_fofe(doc_emb)
-        att_code = self.attention(d_code, q_code)
-        
-        (s_score, e_score) = self.out_encode(att_code)
-        # mask scores
-        s_score.data.masked_fill_(doc_mask.data, -float('inf'))
-        e_score.data.masked_fill_(doc_mask.data, -float('inf'))
-        
-        if self.training:
-            # In training we output log-softmax for NLL
-            s_score = F.log_softmax(s_score, dim=1)
-            e_score = F.log_softmax(e_score, dim=1)
-        else:
-            # ...Otherwise 0-1 probabilities
-            s_score = F.softmax(s_score, dim=1)
-            e_score = F.softmax(e_score, dim=1)
-
-        return s_score, e_score
+        return coarse_score, final_score, position
 
 
 class FOFE_NN(nn.Module):

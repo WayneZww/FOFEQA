@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter
 
-from .fofe_net import FOFE_NN_att, FOFE_NN
+from .fofe_net import FOFE_NN_att, FOFE_NN, FOFENet
 from .utils import tri_num
 from .focal_loss import FocalLoss1d
 
@@ -85,18 +85,20 @@ class FOFEReader(nn.Module):
 
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(dq_input_size, opt['hidden_size'])
+        if opt['net_arch'] == 'FOFENet':
+            self.fnn = FOFENet(dq_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'FNN_att':
             self.fnn = FOFE_NN_att(dq_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d(dq_input_size, opt['hidden_size']*4, 1, 1, bias=False),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Conv1d(dq_input_size, opt['hidden_size'], 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Conv1d(opt['hidden_size'], opt['hidden_size'], 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Conv1d(opt['hidden_size'], opt['hidden_size'], 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']),
                 nn.LeakyReLU(0.2, inplace=True),
 #                nn.Dropout(0.1),
                 nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
@@ -110,7 +112,7 @@ class FOFEReader(nn.Module):
             self.fl_loss = None
         self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         self.apply(self.weights_init)
-        #print(self) 
+        print(self) 
         self.count=0
     #--------------------------------------------------------------------------------
 
@@ -332,15 +334,26 @@ class FOFEReader(nn.Module):
         query_mask = question padding mask          [batch * len_q]
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
-        if self.training and not self.opt['draw_score']:
-            #--------------------------------------------------------------------------------            
+        if self.training and not self.opt['draw_score']:          
             dq_input, target_score = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
-            #dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, target_s, target_e)
-            scores = self.fnn(dq_input)            
+            if self.opt['net_arch'] != "FOFENet":
+                scores = self.fnn(dq_input)            
+            else:
+                scores, final_score, position = self.fnn(dq_input)
+
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
-            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
+            cand_scores = F.softmax(scores, dim=1)
+            loss = loss + F.cross_entropy(cand_scores[:,1,:], torch.argmax(target_score, dim=1)) 
+            import pdb; pdb.set_trace()
+            if self.opt['net_arch'] == "FOFENet":
+                for i in range(position.size(0)):
+                    final_target = torch.index_select(target_score[i], dim=-1, index=position[i]).unsqueeze(0)
+                    loss = loss + F.cross_entropy(final_score[i].unsqueeze(0), final_target)
+                    if final_target.sum(-1)>0:
+                        _final_score = F.softmax(final_score[i], dim=1).unsqueeze(0)
+                        loss = loss + F.cross_entropy(_final_score[:,1,:], torch.argmax(final_target, dim=-1))
 
             return loss
         elif self.opt['draw_score']:
@@ -352,11 +365,23 @@ class FOFEReader(nn.Module):
                 return scores[:,1,:], target_score
         else:
             dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
-            s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
-           
+            if self.opt['net_arch'] != "FOFENet":
+                scores = self.fnn(dq_input) 
+                scores = F.softmax(scores, dim=1)
+                scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+                s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)           
+            else:
+                scores, final_score, position = self.fnn(dq_input, d_mask)
+                final_score = F.softmax(final_score, dim=1)
+                final_rank = F.softmax(final_score[:,1,:], dim=-1)
+                s_idxs = []
+                e_idxs = []       
+                for i in range(scores.size(0)):
+                    v, idx = torch.max(final_rank[i], dim=0)
+                    pos = position[i, idx.item()]
+                    s_idxs.append(starts[pos].item())                                                                                                                                                    
+                    e_idxs.append(ends[pos].item())
+                
             return s_idxs, e_idxs
 
     
