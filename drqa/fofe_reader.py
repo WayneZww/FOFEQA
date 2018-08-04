@@ -346,7 +346,6 @@ class FOFEReader(nn.Module):
                 loss = loss + self.fl_loss(scores, target_score)
             cand_scores = F.softmax(scores, dim=1)
             loss = loss + F.cross_entropy(cand_scores[:,1,:], torch.argmax(target_score, dim=1)) 
-            import pdb; pdb.set_trace()
             if self.opt['net_arch'] == "FOFENet":
                 for i in range(position.size(0)):
                     final_target = torch.index_select(target_score[i], dim=-1, index=position[i]).unsqueeze(0)

@@ -62,11 +62,12 @@ class FOFENet(nn.Module):
             nn.Conv1d(hidden_size, 2, 1, 1, bias=False),
         )
 
-    def forward(self, x, d_mask):
+    def forward(self, x, d_mask=None):
         feats = self.feats_extractor(x)
         coarse_score = self.coarse_classifier(feats)
         coarse_cans = F.softmax(coarse_score, dim=1)
-        coarse_cans[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+        if d_mask is not None:
+            coarse_cans[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
         _, position = torch.topk(coarse_cans[:,1,:], 10, dim=-1, sorted=False)
 
         candidates = []
