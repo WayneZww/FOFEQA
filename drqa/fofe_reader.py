@@ -344,15 +344,14 @@ class FOFEReader(nn.Module):
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
-            cand_scores = F.softmax(scores, dim=1)
-            loss = loss + F.cross_entropy(cand_scores[:,1,:], torch.argmax(target_score, dim=1)) 
-            if self.opt['net_arch'] == "FOFENet":
-                for i in range(position.size(0)):
-                    final_target = torch.index_select(target_score[i], dim=-1, index=position[i]).unsqueeze(0)
-                    loss = loss + F.cross_entropy(final_score[i].unsqueeze(0), final_target)
-                    if final_target.sum(-1)>0:
-                        _final_score = F.softmax(final_score[i], dim=1).unsqueeze(0)
-                        loss = loss + F.cross_entropy(_final_score[:,1,:], torch.argmax(final_target, dim=-1))
+#            cand_scores = F.softmax(scores, dim=1)
+            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
+            for i in range(position.size(0)):
+                final_target = torch.index_select(target_score[i], dim=-1, index=position[i]).unsqueeze(0)
+                loss = loss + F.cross_entropy(final_score[i].unsqueeze(0), final_target)
+                if final_target.sum(-1)>0:
+#                    _final_score = F.softmax(final_score[i], dim=1).unsqueeze(0)
+                    loss = loss + F.cross_entropy(final_score[i,1,:].unsqueeze(0), torch.argmax(final_target, dim=-1))
 
             return loss
         elif self.opt['draw_score']:
