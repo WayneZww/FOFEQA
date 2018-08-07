@@ -26,12 +26,18 @@ class FOFEReader(nn.Module):
             elif opt['tune_partial'] > 0:
                 assert opt['tune_partial'] + 2 < embedding.size(0)
                 offset = self.opt['tune_partial'] + 2
-
-                def embedding_hook(grad, offset=offset):
+                def embedding_hook_v1(grad, offset=offset):
                     grad[offset:] = 0
                     return grad
+                self.embedding.weight.register_hook(embedding_hook_v1)
+            else:
+                def embedding_hook_v2(grad):
+                    grad[:1] = 0
+                    return grad
+                self.embedding.weight.register_hook(embedding_hook_v2)
 
-                self.embedding.weight.register_hook(embedding_hook)
+                import pdb;pdb.set_trace()
+
 
         else:  # random initialized
             self.embedding = nn.Embedding(opt['vocab_size'],

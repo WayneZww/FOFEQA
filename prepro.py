@@ -16,11 +16,11 @@ import logging
 
 def main():
     args, log = setup()
-
+    
     train = flatten_json(args.trn_file, 'train')
     dev = flatten_json(args.dev_file, 'dev')
     log.info('json data flattened.')
-
+    
     # tokenize & annotate
     with Pool(args.threads, initializer=init) as p:
         annotate_ = partial(annotate, wv_cased=args.wv_cased)
@@ -91,6 +91,7 @@ def main():
         'train': train,
         'dev': dev
     }
+
     # train: id, context_id, context_features, tag_id, ent_id,
     #        question_id, context, context_token_span, answer, answer_start, answer_end
     # dev:   id, context_id, context_features, tag_id, ent_id,
@@ -206,21 +207,33 @@ def annotate(row, wv_cased):
     if not wv_cased:
         context_tokens = context_tokens_lower
         question_tokens = question_tokens_lower
+    # ---------------------------------------------------------------------------------<<
+    # MOD: KEEPING QUESTION STRING
+    #return (id_, context_tokens, context_features, context_tags, context_ents,
+    #        question_tokens, context, context_token_span) + row[3:]
     return (id_, context_tokens, context_features, context_tags, context_ents,
-            question_tokens, context, context_token_span) + row[3:]
+            question_tokens, context, context_token_span, question) + row[3:]
+    # --------------------------------------------------------------------------------->>
 
-# ---------------------------------------------------------------------------------
 def index_answer(row):
-    token_span = row[-4]
+    # ---------------------------------------------------------------------------------<<
+    # MOD: ACCOMODATE, KEEPING QUESTION STRING
+    # token_span = row[-4]
+    token_span = row[-5]
+    # --------------------------------------------------------------------------------->>
     starts, ends = zip(*token_span)
     answer_start = row[-2]
     answer_end = row[-1]
+    #----------------------------------------------------------------------------------<<
+    # MOD: KEEPING ANS STRING
     try:
-        # This place, it give up starts, originally it is -3
+        #return row[:-3] + (starts.index(answer_start), ends.index(answer_end))
+
         return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
+        # return row[:-3] + (None, None)
         return row[:-2] + (None, None)
-# ---------------------------------------------------------------------------------
+    # --------------------------------------------------------------------------------->>
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):
