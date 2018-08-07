@@ -213,6 +213,9 @@ class FOFEReader(nn.Module):
             # 3.3. Draw Score Mode (aka for debuging)
             dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
             target_score = target_score.transpose(-1,-2).long()
+            
+            #*****TODO @SED: add debugger to check target_score match with target_s & target_e.*****
+            #import pdb;pdb.set_trace()
             return dq_input, target_score, cands_ans_pos, padded_cands_mask
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \

@@ -70,10 +70,15 @@ class DocReaderModel(object):
             self.optimizer = optim.Adamax(parameters,
                                           self.opt['learning_rate'],
                                           weight_decay=self.opt['weight_decay'])
+        elif self.opt['optimizer'] == 'adam':
+            # Currently use default arguments value for: betas=(0.9, 0.999), eps=1e-08, amsgrad=False
+            self.optimizer = optim.Adam(parameters,
+                                        self.opt['learning_rate'],
+                                        weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adadelta':
             self.optimizer = optim.Adadelta(parameters,
-                                           self.opt['learning_rate'],
-                                           weight_decay=self.opt['weight_decay'])
+                                            self.opt['learning_rate'],
+                                            weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adagrad':
             self.optimizer = optim.Adagrad(parameters,
                                            self.opt['learning_rate'],
@@ -135,7 +140,6 @@ class DocReaderModel(object):
     def draw_predict(self, ex):
         # Eval mode
         self.network.eval()
-            
         # Transfer to GPU
         if self.opt['cuda']:
             inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
@@ -149,16 +153,17 @@ class DocReaderModel(object):
                 score, target_score, cands_ans_pos, _ = self.network(*inputs)
 
             # Plots Candidate Scores (compare with Target Score)
-            target_s_idx = ex[-4]
-            target_e_idx = ex[-3]
+            s_idx = ex[-5]
+            e_idx = ex[-4]
+            question = ex[-3]
             text = ex[-2]
             spans = ex[-1]
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
-            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, text, spans, target_s_idx, target_e_idx)
+            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, question, text, spans, s_idx, e_idx)
 
 
-    def draw_scores(self, scores, target, batch_size, length, cands_pos, text, spans, target_s_idx, target_e_idx):
+    def draw_scores(self, scores, target, batch_size, length, cands_pos, query_text, doc_text, doc_spans, target_s_idx, target_e_idx):
         n_cands = cands_pos.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
@@ -194,8 +199,8 @@ class DocReaderModel(object):
             for j in range(top_predict_s_idx.size(0)):
                 s_idx = top_predict_s_idx[j].item()
                 e_idx = top_predict_e_idx[j].item()
-                s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-                predict_text = text[i][s_offset:e_offset]
+                s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+                predict_text = doc_text[i][s_offset:e_offset]
                 f.write("\t{0}\t{1}\n".format(top_scores[j], predict_text))
             
             # Print the Text of target (used in training).
@@ -203,17 +208,23 @@ class DocReaderModel(object):
             target_pos = cands_pos[base_idx:base_idx+n_cands_per_batch][x_target].int()
             s_idx = target_pos[0].item()
             e_idx = target_pos[1].item()
-            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-            target_text_in_training = text[i][s_offset:e_offset]
+            s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+            target_text_in_training = doc_text[i][s_offset:e_offset]
             f.write("\t{0}\n".format(target_text_in_training))
             
             # Print the Text of target (from data); should be same as in training, but double check it.
             f.write("target_text (from data):\n")
             s_idx = target_s_idx[i].item()
             e_idx = target_e_idx[i].item()
-            s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
-            target_text_in_data = text[i][s_offset:e_offset]
+            s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+            target_text_in_data = doc_text[i][s_offset:e_offset]
             f.write("\t{0}\n".format(target_text_in_data))
+            
+            # Print the Text of Doc Context and Question
+            f.write("context_passage:\n")
+            f.write("{0}\n".format(doc_text[i]))
+            f.write("question:\n")
+            f.write("{0}\n".format(query_text[i]))
             f.close()
             #import pdb;pdb.set_trace()
             #-------------------------------------------------------------------------------------------------------------

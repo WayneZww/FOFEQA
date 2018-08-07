@@ -25,7 +25,7 @@ def main():
         train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     else:
         train, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
-
+    
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -63,7 +63,11 @@ def main():
         model = DocReaderModel(opt, embedding)
         epoch_0 = 1
         best_val_score = 0.0
-
+    """
+    if args.draw_score:
+        test_draw(train, train_y, args, model, log, mode='train')
+        return
+    """
     dev_em_record = []
     dev_f1_record = []
     sample_em_record = []
@@ -168,7 +172,7 @@ def setup():
     parser.add_argument('-rlr', '--reduce_lr', type=float, default=0.,
                         help='reduce initial (resumed) learning rate by this factor.')
     parser.add_argument('-op', '--optimizer', default='adamax',
-                        help='supported optimizer: adamax, sgd')
+                        help='supported optimizer: sgd, adamax, adam, adadelta, adagrad.')
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
     parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
                         help='only applied to SGD.')
@@ -374,9 +378,9 @@ class BatchGen:
             batch = list(zip(*batch))
 
             if self.eval and not self.test_train and not self.draw_score:
-                assert len(batch) == 8
+                assert len(batch) == 9
             else:
-                assert len(batch) == 11
+                assert len(batch) == 12
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -409,7 +413,11 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval or self.draw_score:
+            if not self.eval:
+                y_s = torch.LongTensor(batch[-2])
+                y_e = torch.LongTensor(batch[-1])
+            if self.draw_score:
+                question = list(batch[8])
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.gpu:
@@ -420,12 +428,17 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-            if self.eval and not self.draw_score:
+
+            if self.draw_score:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, text, span)
+                       question_id, question_mask, y_s, y_e, question, text, span)
             else:
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, y_s, y_e, text, span)
+                if self.eval:
+                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                           question_id, question_mask, text, span)
+                else:
+                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                           question_id, question_mask, y_s, y_e, text, span)
 
 
 def _normalize_answer(s):
