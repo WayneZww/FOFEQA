@@ -203,9 +203,7 @@ def setup():
                         help='use named entity tags as a feature.')
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
-    #parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
-    #                    help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
-    parser.add_argument('--fofe_alpha', type=str, default='0.8',
+    parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
                         help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)

@@ -30,14 +30,13 @@ class FOFEReader(nn.Module):
                     grad[offset:] = 0
                     return grad
                 self.embedding.weight.register_hook(embedding_hook_v1)
+            """
             else:
                 def embedding_hook_v2(grad):
                     grad[:1] = 0
                     return grad
                 self.embedding.weight.register_hook(embedding_hook_v2)
-
-                import pdb;pdb.set_trace()
-
+            """
 
         else:  # random initialized
             self.embedding = nn.Embedding(opt['vocab_size'],
@@ -61,12 +60,10 @@ class FOFEReader(nn.Module):
         n_fofe_direction = 2    # SINCE: doc candidate fofe and query fofe are bidectional fofe
 
         # initialize FOFE encoders
-        fofe_alphas = opt['fofe_alpha'].split(',')
-        n_fofe_alphas = len(fofe_alphas)
+        n_fofe_alphas = len(opt['fofe_alpha'])
         self.doc_fofe_tricontext_encoder = []
         self.query_fofe_encoder = []
-        for _, alpha in enumerate(fofe_alphas):
-            fofe_alpha = float(alpha)
+        for _, fofe_alpha in enumerate(opt['fofe_alpha']):
             doc_len_limit = 809
             self.doc_fofe_tricontext_encoder.append(bidirect_fofe_tricontext(doc_input_size,
                                                                     fofe_alpha,
@@ -116,7 +113,7 @@ class FOFEReader(nn.Module):
             
     def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, test_mode=False):
         train_mode = (target_s is not None) and (target_e is not None)
-        n_fofe_alphas = len(self.opt['fofe_alpha'].split(','))
+        n_fofe_alphas = len(self.opt['fofe_alpha'])
         dq_fofes = []
         
         # 1. Construct FOFE Doc & Query Inputs Matrix

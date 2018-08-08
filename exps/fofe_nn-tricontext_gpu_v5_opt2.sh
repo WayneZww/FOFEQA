@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 work_dir="/local/scratch/watchara/Project_FOFE_QA/FOFEQA_SED"
 now=$(date +"%Y%b%d_%Hh%Mm%Ss")
-data_dir="/local/scratch/FOFEQA/data/SQuAD"
-ver_n_opt="v3_opt6"
+data_dir="$work_dir/data/SQuAD-v1.1"
+ver_n_opt="v5_opt2"
 
 gpu_id=3
 epoch_num=100
 batch_size=4
 sample_num=0
-neg_ratio=0
+neg_ratio=0.875
 hidden_size=512
 learning_rate=0.002
 max_cand_len=16
-fofe_alpha="0.9"
+fofe_alpha=0.9
 ctx_incl_cand=True
 ctx_excl_cand=True
 n_ctx_types=1
@@ -47,4 +47,3 @@ python -u train_fofe.py --model_dir ${models_n_logs_dir} \
                 --contexts_excl_cand ${ctx_excl_cand} \
                 --optimizer adamax \
                 --learning_rate ${learning_rate}
-

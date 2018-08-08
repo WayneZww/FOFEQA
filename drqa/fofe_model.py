@@ -160,6 +160,7 @@ class DocReaderModel(object):
             spans = ex[-1]
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
+            
             self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, question, text, spans, s_idx, e_idx)
 
 
