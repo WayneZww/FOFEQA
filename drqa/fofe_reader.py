@@ -249,7 +249,7 @@ class FOFEReader(nn.Module):
         doc_pos = document POS tags                 [batch * len_d]
         doc_ner = document entity tags              [batch * len_d]
         doc_mask = document padding mask            [batch * len_d]
-        query = question word indices               [batch * len_q]
+        query = question word indices1[batch * len_q]
         query_mask = question padding mask          [batch * len_q]
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
