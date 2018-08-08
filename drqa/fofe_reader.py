@@ -30,13 +30,11 @@ class FOFEReader(nn.Module):
                     grad[offset:] = 0
                     return grad
                 self.embedding.weight.register_hook(embedding_hook_v1)
-            """
             else:
                 def embedding_hook_v2(grad):
                     grad[:1] = 0
                     return grad
                 self.embedding.weight.register_hook(embedding_hook_v2)
-            """
 
         else:  # random initialized
             self.embedding = nn.Embedding(opt['vocab_size'],
