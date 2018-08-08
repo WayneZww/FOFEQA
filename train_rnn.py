@@ -11,11 +11,11 @@ from datetime import datetime
 from collections import Counter
 import torch
 import msgpack
-from drqa.fofe_model import DocReaderModel
+from drqa.model import DocReaderModel
 from drqa.utils import str2bool
+
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 def main():
     args, log = setup()
@@ -25,6 +25,7 @@ def main():
         train, train_y, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
     else:
         train, dev, dev_y, sample_train, sample_train_y, embedding, opt = load_data(vars(args))
+
     log.info(opt)
     log.info('[Data loaded.]')
 
@@ -69,7 +70,7 @@ def main():
     x_axis = []
     for epoch in range(epoch_0, epoch_0 + args.epochs):
         log.warning('Epoch {}'.format(epoch))
-        # Train
+        # train
         if not args.test_only:
             train_process(train, epoch, args, model, log)
 
@@ -129,7 +130,7 @@ def main():
             plt.savefig(args.model_dir+"/Test.png")
             plt.clf()
 
-
+    
 def setup():
     parser = argparse.ArgumentParser(
         description='Train a Document Reader model.'
@@ -137,9 +138,9 @@ def setup():
     # system
     parser.add_argument('--log_per_updates', type=int, default=5,
                         help='log model loss per x updates (mini-batches).')
-    parser.add_argument('--data_file', default='./data/SQuAD-v1.1/data.msgpack',
+    parser.add_argument('--data_file', default='./data/SQuAD/data.msgpack',
                         help='path to preprocessed data file.')
-    parser.add_argument('--meta_file', default='./data/SQuAD-v1.1/meta.msgpack',
+    parser.add_argument('--meta_file', default='./data/SQuAD/meta.msgpack',
                         help='path to preprocessed data file.')
     parser.add_argument('--model_dir', default='models',
                         help='path to store saved models.')
@@ -171,10 +172,8 @@ def setup():
     parser.add_argument('-rlr', '--reduce_lr', type=float, default=0.,
                         help='reduce initial (resumed) learning rate by this factor.')
     parser.add_argument('-op', '--optimizer', default='adamax',
-                        help='supported optimizer: sgd, adamax, adam, adadelta, adagrad.')
+                        help='supported optimizer: adamax, sgd')
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
-    parser.add_argument('-ae', '--adam_eps', type=float, default=1e-08,
-                        help='adam eps.')
     parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
                         help='only applied to SGD.')
     parser.add_argument('-mm', '--momentum', type=float, default=0,
@@ -187,7 +186,9 @@ def setup():
                         help='if true, will draw test score')
     parser.add_argument('--draw_plot', action='store_true',
                         help='if true, will draw test score')
-    
+    parser.add_argument('--rnn_padding', action='store_true',
+                        help='perform rnn padding (much slower but more accurate).')
+
     # model
     parser.add_argument('--contexts_incl_cand', type=str2bool, nargs='?', const=True, default=True,
                         help='Have the Left/Right Contexts that include Candidates')
@@ -196,23 +197,33 @@ def setup():
     parser.add_argument('--question_merge', default='self_attn')
     parser.add_argument('--doc_layers', type=int, default=3)
     parser.add_argument('--question_layers', type=int, default=3)
-    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--hidden_size', type=int, default=128)
     parser.add_argument('--num_features', type=int, default=4)
     parser.add_argument('--pos', type=str2bool, nargs='?', const=True, default=True,
                         help='use pos tags as a feature.')
     parser.add_argument('--ner', type=str2bool, nargs='?', const=True, default=True,
                         help='use named entity tags as a feature.')
+    parser.add_argument('-gc', '--grad_clipping', type=float, default=10)
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
-                        help='use comma as separator for dual-fofe; (e.g. 0.4 0.8).')
+                        help='use comma as separator for dual-fofe; (e.g. 0.4,0.8).')
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
     parser.add_argument('--filter', default='fofe',
                         help='Architecture for filter')
-    parser.add_argument('--net_arch', default='simple',
+    parser.add_argument('--net_arch', default='FOFE_NN',
                         help='Architecture for NN')
+
+    parser.add_argument('--use_qemb', type=str2bool, nargs='?', const=True, default=True)
+    parser.add_argument('--concat_rnn_layers', type=str2bool, nargs='?',
+                        const=True, default=True)
+    parser.add_argument('--dropout_rnn', type=float, default=0.4)
+    parser.add_argument('--dropout_rnn_output', type=str2bool, nargs='?',
+                        const=True, default=True)
+    parser.add_argument('--rnn_type', default='lstm',
+                        help='supported types: rnn, gru, lstm')
 
     args = parser.parse_args()
 
@@ -338,15 +349,9 @@ def test_process(dev, dev_y, args, model, log, mode='dev'):
 
 def test_draw(dev, dev_y, args, model, log, mode='dev'):
     batches = BatchGen(dev, args.batch_size, evaluation=True, gpu=args.cuda, draw_score=args.draw_score)
-    # for i, batch in enumerate(batches):
-    #     model.draw_predict(batch)
-    #     log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
-    predictions = []
     for i, batch in enumerate(batches):
-        predictions.extend(model.predict(batch))
-        log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
-    em, f1 = score(predictions, dev_y)
-    log.warning("GT EM: {} F1: {}".format(em, f1))
+        model.draw_predict(batch)
+        log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
 
 
 
@@ -386,9 +391,9 @@ class BatchGen:
             batch = list(zip(*batch))
 
             if self.eval and not self.test_train and not self.draw_score:
-                assert len(batch) == 9
+                assert len(batch) == 8
             else:
-                assert len(batch) == 12
+                assert len(batch) == 11
 
             context_len = max(len(x) for x in batch[1])
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
@@ -421,11 +426,7 @@ class BatchGen:
             question_mask = torch.eq(question_id, 0)
             text = list(batch[6])
             span = list(batch[7])
-            if not self.eval:
-                y_s = torch.LongTensor(batch[-2])
-                y_e = torch.LongTensor(batch[-1])
-            if self.draw_score:
-                question = list(batch[8])
+            if not self.eval or self.draw_score:
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.gpu:
@@ -436,17 +437,12 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-
-            if self.draw_score:
+            if self.eval and not self.draw_score:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, y_s, y_e, question, text, span)
+                       question_id, question_mask, text, span)
             else:
-                if self.eval:
-                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                           question_id, question_mask, text, span)
-                else:
-                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                           question_id, question_mask, y_s, y_e, text, span)
+                yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                       question_id, question_mask, y_s, y_e, text, span)
 
 
 def _normalize_answer(s):
@@ -508,3 +504,4 @@ def score(pred, truth):
 
 if __name__ == '__main__':
     main()
+

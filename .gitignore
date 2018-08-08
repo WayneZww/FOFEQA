@@ -7,6 +7,9 @@ drqa/BACKUP/
 models/
 models_n_logs/
 exps/*
+exps/OLD_VER_options/
+exps/fofe_nn-tricontext_cpu*.sh
+TOBE_REMOVE/
 *.DS_Store
 *.log
 .vscode

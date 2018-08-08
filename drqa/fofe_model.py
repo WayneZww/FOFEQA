@@ -72,7 +72,7 @@ class DocReaderModel(object):
                                           self.opt['learning_rate'],
                                           weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adam':
-            print("adam eps is:" + str(self.opt['adam_eps']))
+            # print("adam eps is:" + str(self.opt['adam_eps']))
             self.optimizer = optim.Adam(parameters, eps=self.opt['adam_eps'],
                                           weight_decay=self.opt['weight_decay'])
         elif self.opt['optimizer'] == 'adadelta':
@@ -132,21 +132,6 @@ class DocReaderModel(object):
             s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
             predictions.append(text[i][s_offset:e_offset])
         return predictions
-    
-    def draw_predict(self, ex):
-        # Eval mode
-        self.network.eval()
-
-        # Transfer to GPU
-        if self.opt['cuda']:
-            inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
-        else:
-            inputs = [Variable(e) for e in ex[:9]]
-
-        with torch.no_grad():
-            scores, target_score = self.network(*inputs)
-        
-        self.rank_draw(scores, target_score, doc.size(-1))
 
     def draw_predict(self, ex):
         # Eval mode
@@ -223,6 +208,100 @@ class DocReaderModel(object):
             f.close()
             #import pdb;pdb.set_trace()
             #----------------------------------------------------------------------------------------
+
+
+    def draw_predict(self, ex):
+        # Eval mode
+        self.network.eval()
+        # Transfer to GPU
+        if self.opt['cuda']:
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:9]]
+        else:
+            inputs = [Variable(e) for e in ex[:9]]
+        
+        p = random.random()
+        if p <= 1/100:
+            # Run forward
+            with torch.no_grad():
+                score, target_score, cands_ans_pos, _ = self.network(*inputs)
+
+            # Plots Candidate Scores (compare with Target Score)
+            s_idx = ex[-5]
+            e_idx = ex[-4]
+            question = ex[-3]
+            text = ex[-2]
+            spans = ex[-1]
+            length = inputs[0].size(-1)
+            batch_size = inputs[0].size(0)
+            
+            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, question, text, spans, s_idx, e_idx)
+
+
+    def draw_scores(self, scores, target, batch_size, length, cands_pos, query_text, doc_text, doc_spans, target_s_idx, target_e_idx):
+        n_cands = cands_pos.size(0)
+        assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
+        n_cands_per_batch = round(n_cands / batch_size)
+        
+        x_predict = np.arange(n_cands_per_batch)
+        for i in range(batch_size):
+            self.count += 1
+            fig = plt.figure(figsize=(100,10))
+            ax = fig.add_subplot()
+            
+            base_idx = i*n_cands_per_batch
+            y_predict = scores[base_idx:base_idx+n_cands_per_batch].cpu().numpy()
+            _, x_target = target[base_idx:base_idx+n_cands_per_batch].max(dim=0)
+            
+            plt.plot(x_predict, y_predict, 'o-', label=u"Distribution")
+            plt.plot(x_target.item(), 0, 'ro-', label=u"Ground Truth")
+            plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
+            plt.clf()
+            
+            #
+            #TODO @SED: this is quick implementation; it's too messy, try put in other function --------------------------
+            f = open(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".txt", 'w+')
+            
+            # Print the Text of Top scoring candidates
+            top_scores, top_idxs = scores[base_idx:base_idx+n_cands_per_batch].topk(5, dim=0)
+            top_cands_pos = cands_pos[base_idx:base_idx+n_cands_per_batch]\
+                                .index_select(0, top_idxs)\
+                                .int()
+            top_predict_s_idx = top_cands_pos[:,0]
+            top_predict_e_idx = top_cands_pos[:,1]
+            
+            f.write("top_predictions & scores:\n")
+            for j in range(top_predict_s_idx.size(0)):
+                s_idx = top_predict_s_idx[j].item()
+                e_idx = top_predict_e_idx[j].item()
+                s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+                predict_text = doc_text[i][s_offset:e_offset]
+                f.write("\t{0}\t{1}\n".format(top_scores[j], predict_text))
+            
+            # Print the Text of target (used in training).
+            f.write("target_text (used in training):\n")
+            target_pos = cands_pos[base_idx:base_idx+n_cands_per_batch][x_target].int()
+            s_idx = target_pos[0].item()
+            e_idx = target_pos[1].item()
+            s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+            target_text_in_training = doc_text[i][s_offset:e_offset]
+            f.write("\t{0}\n".format(target_text_in_training))
+            
+            # Print the Text of target (from data); should be same as in training, but double check it.
+            f.write("target_text (from data):\n")
+            s_idx = target_s_idx[i].item()
+            e_idx = target_e_idx[i].item()
+            s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+            target_text_in_data = doc_text[i][s_offset:e_offset]
+            f.write("\t{0}\n".format(target_text_in_data))
+            
+            # Print the Text of Doc Context and Question
+            f.write("context_passage:\n")
+            f.write("{0}\n".format(doc_text[i]))
+            f.write("question:\n")
+            f.write("{0}\n".format(query_text[i]))
+            f.close()
+            #import pdb;pdb.set_trace()
+            #-------------------------------------------------------------------------------------------------------------
 
 
     def save(self, filename, epoch, scores):
