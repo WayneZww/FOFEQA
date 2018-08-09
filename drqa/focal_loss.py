@@ -46,8 +46,12 @@ class FocalLoss1d(nn.Module):
         self.FL = FocalLoss(class_num, alpha, gamma, size_average)
 
     def forward(self, inputs, targets):
-        N, C, W = inputs.size()
-        reshaped_inputs = inputs.transpose(-1, -2).contiguous().view(N*W, C)
-        reshaped_targets = targets.contiguous().view(N*W)
-        loss = self.FL(reshaped_inputs, reshaped_targets)
+        if len(inputs.size()) == 2:
+            C, W = inputs.size()
+            loss = self.FL(inputs, targets)
+        elif len(inputs.size()) == 3:
+            N, C, W = inputs.size()
+            reshaped_inputs = inputs.transpose(-1, -2).contiguous().view(N*W, C)
+            reshaped_targets = targets.contiguous().view(N*W)
+            loss = self.FL(reshaped_inputs, reshaped_targets)
         return loss
