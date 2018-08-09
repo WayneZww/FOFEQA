@@ -77,12 +77,17 @@ class FOFEReader(nn.Module):
         fnn_input_size = (doc_input_size * (n_ctx_types+n_fofe_direction-1) + \
                           query_input_size * n_fofe_direction) * n_fofe_alphas
 
+        # Wayne's Version FOFE Encoders
         if opt['filter'] == 'fofe':
             self.fofe_encoder = fofe_multi_encoder(fofe_filter, doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
             self.fofe_linear = fofe_multi(fofe, opt['embedding_dim'], opt['fofe_alpha'])
         elif opt['filter'] == 'flex_all':
             self.fofe_encoder = fofe_multi_encoder(fofe_flex_all_filter, doc_input_size, opt['fofe_alpha'],  opt['fofe_max_length'])
             self.fofe_linear = fofe_multi(fofe_flex_all, opt['embedding_dim'], opt['fofe_alpha'])
+
+        # Sed's Version FOFE Encoders
+        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'], doc_input_size, opt)
+        self.query_fofe_encoder = bidirect_fofe_multi(opt['fofe_alpha'], query_input_size)
 
         if opt['net_arch'] == 'FNN':
             self.fnn = FOFE_NN(fnn_input_size, opt['hidden_size'])
@@ -109,27 +114,16 @@ class FOFEReader(nn.Module):
             self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         else:
             self.fl_loss = None
-        self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
+
+        # TODO: DISCUSS WITH WAYNE; for now when opt['neg_ratio'] <= 0, just use default weight
+        # originally: self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
+        if opt['neg_ratio'] > 0:
+            self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
+        else:
+            self.ce_loss = nn.CrossEntropyLoss()
+
         self.apply(self.weights_init)
-        #print(self) 
         self.count=0
-    #--------------------------------------------------------------------------------
-        # # initialize FOFE encoders
-        # self.doc_fofe_tricontext_encoder = []
-        # self.query_fofe_encoder = []
-        # for _, fofe_alpha in enumerate(opt['fofe_alpha']):
-        #     doc_len_limit = 809
-        #     self.doc_fofe_tricontext_encoder.append(bidirect_fofe_tricontext(doc_input_size,
-        #                                                             fofe_alpha,
-        #                                                             cand_len_limit=self.opt['max_len'],
-        #                                                             doc_len_limit=doc_len_limit,
-        #                                                             has_lr_ctx_cand_incl=opt['contexts_incl_cand'],
-        #                                                             has_lr_ctx_cand_excl=opt['contexts_excl_cand']))
-        #     self.query_fofe_encoder.append(bidirect_fofe(query_input_size, fofe_alpha))
-        
-        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'], doc_input_size, opt)
-        self.query_fofe_encoder = bidirect_fofe_multi(opt['fofe_alpha'], query_input_size)
-      
 
     def rank_cand_select(self, cands_ans_pos, scores, batch_size):
         n_cands = cands_ans_pos.size(0)
@@ -160,7 +154,6 @@ class FOFEReader(nn.Module):
             doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
         
         dq_fofes.append(doc_fofe)
-
         batch_size = doc_fofe.size(0)
         n_cands_ans = doc_fofe.size(1)
         doc_embedding_dim = doc_fofe.size(-1) / n_fofe_alphas
@@ -168,7 +161,7 @@ class FOFEReader(nn.Module):
         query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size,n_cands_ans)
         dq_fofes.append(query_fofe)       
         query_embedding_dim = query_fofe.size(-1) / n_fofe_alphas
-        import pdb;pdb.set_trace()
+        
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 
@@ -343,7 +336,7 @@ class FOFEReader(nn.Module):
             e_idxs.append(ends[idx.item()].item())
         return s_idxs, e_idxs                    
 
-    def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):dq_input
+    def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
         # Embed both document and question
         doc_emb = self.embedding(doc)
         query_emb = self.embedding(query)
@@ -378,45 +371,51 @@ class FOFEReader(nn.Module):
             # dq_input, target_score, starts, ends, mask_batch = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
             #assert target_score.sum(-1).sum(-1) == 4
-            import pdb;pdb.set_trace()
-            scores = self.fnn(dq_input)            
+            scores = self.fnn(dq_input)
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
-            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1)) 
+            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
+            #import pdb;pdb.set_trace()
             return loss
         elif self.opt['draw_score']:
-            #p = random.random()
-            #if p <= 1/100:
-            dq_input, target_score, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            target_score = target_score.float()
-            target_score.data.masked_fill_(d_mask.data, -float('inf'))
-            s_idxs, e_idxs = self.rank_select(target_score, starts, ends)
-            return s_idxs, e_idxs
-            #return scores[:,1,:], target_score
+            # Wayne's Version:
+            # dq_input, target_score, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            # scores = self.fnn(dq_input)
+            # scores = F.softmax(scores, dim=1)
+            # target_score = target_score.float()
+            # target_score.data.masked_fill_(d_mask.data, -float('inf'))
+            # s_idxs, e_idxs = self.rank_select(target_score, starts, ends)
+
+            dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
+            target_score = target_score.squeeze(0).float()
+            target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            batch_size = query.size(0)
+            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, target_score, batch_size)
+            return predict_s, predict_e
             """
             dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
             score = self.fnn(dq_input)
             score = F.softmax(score, dim=1)
             score = score[:,1,:].squeeze(0)
             target_score = target_score.squeeze(0)
-            return score, target_score, cands_ans_pos, padded_cands_mask"""
+            return score, target_score, cands_ans_pos, padded_cands_mask
+            """
         else:
-            dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
-            # dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            score = scores[:,1,:].squeeze(0)
-            scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
-            s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
-           
-            return s_idxs, e_idxs
+            # Wayne's Version:
+            # dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
+            # scores = self.fnn(dq_input)
+            # scores = F.softmax(scores, dim=1)
+            # score = scores[:,1,:].squeeze(0)
+            # scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
+            # s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
+            # return s_idxs, e_idxs
 
-            # # TODO: TRY REPLACE LINE ABOVE WITH --> score = score[:,1,:].squeeze(0)
-            # score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
-            # batch_size = query.size(0)
-            # predict_s, predict_e = self.rank_cand_select(cands_ans_pos, score, batch_size)
-            # return predict_s, predict_e
+            dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+            scores = self.fnn(dq_input)
+            scores = scores[:,1,:].squeeze(0)
+            scores.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            batch_size = query.size(0)
+            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
+            return predict_s, predict_e
 

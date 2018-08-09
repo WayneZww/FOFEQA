@@ -181,7 +181,6 @@ class DocReaderModel(object):
             plt.savefig(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".png")
             plt.clf()
             
-            #
             #TODO @SED: this is quick implementation; it's too messy, try put in other function --------------------------
             f = open(self.opt["model_dir"]+"/gt_" + str(self.count)+"_"+str(length)+".txt", 'w+')
             
