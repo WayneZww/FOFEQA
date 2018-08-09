@@ -45,10 +45,6 @@ def main():
             lr_decay(model.optimizer, lr_decay=args.reduce_lr)
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
             
-        # Test  dev and total train
-        if args.draw_score:
-            test_draw(train, train_y, args, model, log, mode='train')
-            return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
 
@@ -61,6 +57,11 @@ def main():
         model = DocReaderModel(opt, embedding)
         epoch_0 = 1
         best_val_score = 0.0
+    
+    # Test  dev and total train
+    if args.draw_score:
+        test_draw(train, train_y, args, model, log, mode='train')
+        return
     
     dev_em_record = []
     dev_f1_record = []

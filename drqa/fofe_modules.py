@@ -92,54 +92,54 @@ class fofe_linear(nn.Module):
         return output
 
 
-# class fofe(nn.Module):
-#     def __init__(self, channels, alpha, inverse=False): 
-#         super(fofe, self).__init__()
-#         self.alpha = alpha
-#         self.inverse = inverse
-        
-#     def forward(self, x, x_mask):
-#         length = x.size(-2)
-#         exponent = x.new_empty(x.size(0),1,length)
-#         if self.inverse :
-#             exponent.copy_(torch.range(0, length-1))
-#         else:
-#             exponent.copy_(torch.linspace(length-1,0,length))
-#             exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
-#         matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
-#         fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
-#         return fofe_code
-    
-#     def extra_repr(self):
-#         return 'alpha={alpha}, inverse={inverse}'.format(**self.__dict__)
-
-
 class fofe(nn.Module):
-    def __init__(self, channels, alpha, inverse=False):
+    def __init__(self, channels, alpha, inverse=False): 
         super(fofe, self).__init__()
         self.alpha = alpha
         self.inverse = inverse
-    
-    def forward(self, x_input, x_mask):
-        length = x_input.size(-2)
         
-        # Construct Alphas Buffer
-        alpha_buffer = x_input.new_empty(x_input.size(0),1,length)
-        if self.inverse:
-            alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.range(0, length-1)))
+    def forward(self, x, x_mask):
+        length = x.size(-2)
+        exponent = x.new_empty(x.size(0),1,length)
+        if self.inverse :
+            exponent.copy_(torch.range(0, length-1))
         else:
-            alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-            alpha_buffer_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
-            alpha_buffer.copy_(torch.bmm(alpha_buffer_padding_rm, alpha_buffer))
-
-        # Adjust Alpha Buffer to accommondate the padding
-        rev_x_mask = (1 - x_mask).unsqueeze(1).float()
-        alpha_buffer.copy_(torch.mul(alpha_buffer, rev_x_mask))
-        
-        # Compute FOFE Code
-        fofe_code = torch.bmm(alpha_buffer,x_input).squeeze(-2)
-        
+            exponent.copy_(torch.linspace(length-1,0,length))
+            exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
+        matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
+        fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
         return fofe_code
+    
+    def extra_repr(self):
+        return 'alpha={alpha}, inverse={inverse}'.format(**self.__dict__)
+
+
+# class fofe(nn.Module):
+#     def __init__(self, channels, alpha, inverse=False):
+#         super(fofe, self).__init__()
+#         self.alpha = alpha
+#         self.inverse = inverse
+    
+#     def forward(self, x_input, x_mask):
+#         length = x_input.size(-2)
+        
+#         # Construct Alphas Buffer
+#         alpha_buffer = x_input.new_empty(x_input.size(0),1,length)
+#         if self.inverse:
+#             alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.range(0, length-1)))
+#         else:
+#             alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+#             alpha_buffer_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
+#             alpha_buffer.copy_(torch.bmm(alpha_buffer_padding_rm, alpha_buffer))
+
+#         # Adjust Alpha Buffer to accommondate the padding
+#         rev_x_mask = (1 - x_mask).unsqueeze(1).float()
+#         alpha_buffer.copy_(torch.mul(alpha_buffer, rev_x_mask))
+        
+#         # Compute FOFE Code
+#         fofe_code = torch.bmm(alpha_buffer,x_input).squeeze(-2)
+        
+#         return fofe_code
 
 
 class fofe_flex(nn.Module):

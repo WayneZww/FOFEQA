@@ -95,17 +95,17 @@ class FOFEReader(nn.Module):
             self.fnn = FOFE_NN_att(fnn_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Conv1d(fnn_input_size, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Linear(fnn_input_size, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.LeakyReLU(0.2, inplace=True),
 #                nn.Dropout(0.1),
-                nn.Conv1d(opt['hidden_size']*4, 2, 1, 1, bias=False),
+                nn.Linear(opt['hidden_size']*4, 2),
             )
         else:
             raise Exception('Architecture undefined!')
@@ -126,16 +126,15 @@ class FOFEReader(nn.Module):
         self.count=0
 
     def rank_cand_select(self, cands_ans_pos, scores, batch_size):
-        n_cands = cands_ans_pos.size(0)
+        n_cands = scores.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
         n_cands_per_batch = round(n_cands / batch_size)
-        
         predict_s = []
         predict_e = []
         for i in range(batch_size):
             base_idx = i*n_cands_per_batch
             score, idx = scores[base_idx:base_idx+n_cands_per_batch].max(dim=0)
-            _predict = cands_ans_pos[base_idx+idx.item()]
+            _predict = cands_ans_pos[idx.item()]
             _predict_s = round(_predict[0].item())
             _predict_e = round(_predict[1].item())
             #   Round float to int, b/c _predict_s & _predict_s is an index (so it was a whole number with float type).
@@ -251,7 +250,7 @@ class FOFEReader(nn.Module):
 
     #--------------------------------------------------------------------------------
            
-    def scan_all(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
+    def sample_via_conv(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
@@ -311,15 +310,22 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)  
         dq_input = torch.cat([forward_ans_batch, inverse_ans_batch, l_ctx_ex_batch, l_ctx_in_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
-
+        
         mask_batch = torch.cat(mask_batch, dim=-1)
-        starts = torch.cat(starts, dim=0).long()
-        ends = torch.cat(ends, dim=0).long()
+        starts = torch.cat(starts, dim=0).long().unsqueeze(-1)
+        ends = torch.cat(ends, dim=0).long().unsqueeze(-1)
+        cands_ans_pos = torch.cat([starts, ends], dim=-1)
+
+        # change size
+        dq_input = torch.reshape(dq_input.transpose(-1,-2), (dq_input.size(0)*dq_input.size(-1), dq_input.size(1)))
+        mask_batch = torch.reshape(mask_batch, (dq_input.size(0), 1))
         if target_s is not None:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
-            return dq_input, target_score, starts, ends, mask_batch
+            #change size
+            target_score = torch.reshape(target_score, (dq_input.size(0),))
+            return dq_input, target_score, cands_ans_pos, mask_batch
 
-        return dq_input, starts, ends, mask_batch
+        return dq_input, cands_ans_pos, mask_batch
       
 
     def rank_select(self, scores, starts, ends):
@@ -368,28 +374,26 @@ class FOFEReader(nn.Module):
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training and not self.opt['draw_score']:   
-            # dq_input, target_score, starts, ends, mask_batch = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
-            dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
-            #assert target_score.sum(-1).sum(-1) == 4
+            dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            # dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
+            assert target_score.sum(-1).sum(-1) == 4
             scores = self.fnn(dq_input)
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
-            loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
             #import pdb;pdb.set_trace()
             return loss
         elif self.opt['draw_score']:
             # Wayne's Version:
-            # dq_input, target_score, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            dq_input, target_score, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             # scores = self.fnn(dq_input)
             # scores = F.softmax(scores, dim=1)
-            # target_score = target_score.float()
-            # target_score.data.masked_fill_(d_mask.data, -float('inf'))
-            # s_idxs, e_idxs = self.rank_select(target_score, starts, ends)
+            target_score = target_score.float().unsqueeze(-1)
+            target_score.data.masked_fill_(d_mask.data, -float('inf'))
 
-            dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
-            target_score = target_score.squeeze(0).float()
-            target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            # dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
+            # target_score = target_score.squeeze(0).float()
+            # target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, target_score, batch_size)
             return predict_s, predict_e
@@ -403,18 +407,18 @@ class FOFEReader(nn.Module):
             """
         else:
             # Wayne's Version:
-            # dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)
-            # scores = self.fnn(dq_input)
-            # scores = F.softmax(scores, dim=1)
-            # score = scores[:,1,:].squeeze(0)
-            # scores[:,1,:].data.masked_fill_(d_mask.data, -float('inf'))
-            # s_idxs, e_idxs = self.rank_select(scores[:,1,:], starts, ends)
+            dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask)
+            scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
+            scores = scores[:,1:]
+            scores.data.masked_fill_(d_mask.data, -float('inf'))
             # return s_idxs, e_idxs
 
-            dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
-            scores = self.fnn(dq_input)
-            scores = scores[:,1,:].squeeze(0)
-            scores.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            # dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+            # scores = self.fnn(dq_input)
+            # scores = scores[:,1,:].squeeze(0)
+            # scores.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
             return predict_s, predict_e
