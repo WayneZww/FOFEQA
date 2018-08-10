@@ -158,7 +158,7 @@ class DocReaderModel(object):
             length = inputs[0].size(-1)
             batch_size = inputs[0].size(0)
             
-            self.draw_scores(score, target_score, batch_size, length, cands_ans_pos, question, text, spans, s_idx, e_idx)
+            self.draw_scores(score.cpu(), target_score.cpu(), batch_size, length, cands_ans_pos.cpu(), question, text, spans, s_idx, e_idx)
 
 
     def draw_scores(self, scores, target, batch_size, length, cands_pos, query_text, doc_text, doc_spans, target_s_idx, target_e_idx):
@@ -173,7 +173,7 @@ class DocReaderModel(object):
             ax = fig.add_subplot()
             
             base_idx = i*n_cands_per_batch
-            y_predict = scores[base_idx:base_idx+n_cands_per_batch].cpu().numpy()
+            y_predict = scores[base_idx:base_idx+n_cands_per_batch].numpy()
             _, x_target = target[base_idx:base_idx+n_cands_per_batch].max(dim=0)
             
             plt.plot(x_predict, y_predict, 'o-', label=u"Distribution")

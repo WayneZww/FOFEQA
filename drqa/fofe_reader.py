@@ -86,7 +86,13 @@ class FOFEReader(nn.Module):
             self.fofe_linear = fofe_multi(fofe_flex_all, opt['embedding_dim'], opt['fofe_alpha'])
 
         # Sed's Version FOFE Encoders
-        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'], doc_input_size, opt)
+        doc_len_limit = 809
+        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'],
+                                                                          doc_input_size,
+                                                                          opt['max_len'],
+                                                                          doc_len_limit,
+                                                                          opt['contexts_incl_cand'],
+                                                                          opt['contexts_excl_cand'])
         self.query_fofe_encoder = bidirect_fofe_multi(opt['fofe_alpha'], query_input_size)
 
         if opt['net_arch'] == 'FNN':
@@ -96,6 +102,9 @@ class FOFEReader(nn.Module):
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
                 nn.Conv1d(fnn_input_size, opt['hidden_size']*4, 1, 1, bias=False),
+                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv1d(opt['hidden_size']*4, opt['hidden_size']*4, 1, 1, bias=False),
@@ -152,13 +161,12 @@ class FOFEReader(nn.Module):
             doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
         else:
             doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
-        
         dq_fofes.append(doc_fofe)
         batch_size = doc_fofe.size(0)
         n_cands_ans = doc_fofe.size(1)
         doc_embedding_dim = doc_fofe.size(-1) / n_fofe_alphas
         
-        query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size,n_cands_ans)
+        query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size, n_cands_ans)
         dq_fofes.append(query_fofe)       
         query_embedding_dim = query_fofe.size(-1) / n_fofe_alphas
         
@@ -187,18 +195,19 @@ class FOFEReader(nn.Module):
                 sample_num = self.opt['sample_num']
                 n_pos_samples = 1
                 n_neg_samples = sample_num - n_pos_samples
-            
+        
             for i in range(target_s.size(0)):
                 # 2.1. Build Target Scores Matrix.
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
-                doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].doc_len_limit)
-                max_cand_len = self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].cand_len_limit
-                
+                doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.fofe_encoders[0].doc_len_limit)
+                max_cand_len = self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit
+                assert max_cand_len >= ans_span, ("BAD SETTING - max_cand_len should alway be > cand_len/ans_span; "
+                                                  "CURRENT: max_cand_len = {0}, ans_span = {1}".format(max_cand_len, ans_span))
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
-                ans_idx = self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].forward_fofe\
+                ans_idx = self.doc_fofe_tricontext_encoder.fofe_encoders[0].forward_fofe\
                             .get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
                 target_score[ans_idx] = 1
                 

@@ -421,7 +421,7 @@ class fofe_multi_encoder(fofe_encoder):
 
 
 class fofe_tricontext(nn.Module):
-    def __init__(self, embedding_dim, alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True, inverse=False):
+    def __init__(self, embedding_dim, alpha, cand_len_limit=10, doc_len_limit=809, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True, inverse=False):
         super(fofe_tricontext, self).__init__()
         self.alpha = alpha
         self.cand_len_limit = cand_len_limit
@@ -651,22 +651,22 @@ class bidirect_fofe(nn.Module):
 
 
 class bidirect_fofe_multi_tricontext(nn.Module):
-    def __init__(self, fofe_alphas, doc_input_size, opt):
+    # bidirect_fofe_multi_tricontext encoder design for doc input.
+    def __init__(self, fofe_alphas, doc_input_size, cand_len_limit, doc_len_limit, contexts_incl_cand, contexts_excl_cand):
         super(bidirect_fofe_multi_tricontext, self).__init__()
-        self.doc_fofe_tricontext_encoder = []
+        self.fofe_encoders = []
         for _, fofe_alpha in enumerate(fofe_alphas):
-            doc_len_limit = 809
-            self.doc_fofe_tricontext_encoder.append(bidirect_fofe_tricontext(doc_input_size,
-                                                                    fofe_alpha,
-                                                                    cand_len_limit=opt['max_len'],
-                                                                    doc_len_limit=doc_len_limit,
-                                                                    has_lr_ctx_cand_incl=opt['contexts_incl_cand'],
-                                                                    has_lr_ctx_cand_excl=opt['contexts_excl_cand']))        
-        self.doc_fofe_tricontext_encoder = nn.ModuleList(self.doc_fofe_tricontext_encoder)
+            self.fofe_encoders.append(bidirect_fofe_tricontext(doc_input_size,
+                                                               fofe_alpha,
+                                                               cand_len_limit=cand_len_limit,
+                                                               doc_len_limit=doc_len_limit,
+                                                               has_lr_ctx_cand_incl=contexts_incl_cand,
+                                                               has_lr_ctx_cand_excl=contexts_excl_cand))
+        self.fofe_encoders = nn.ModuleList(self.fofe_encoders)
     
     def forward(self, doc_emb, doc_mask, test_mode=False):
         doc_fofe = []
-        for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
+        for d_fofe_encoder in self.fofe_encoders:
             if test_mode:
                 _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask, test_mode)
             else:
@@ -681,16 +681,17 @@ class bidirect_fofe_multi_tricontext(nn.Module):
 
         
 class bidirect_fofe_multi(nn.Module):
+    # bidirect_fofe_multi encoder design for query input.
     def __init__(self, fofe_alphas, query_input_size):
         super(bidirect_fofe_multi, self).__init__()
-        self.query_fofe_encoder = []
+        self.fofe_encoders = []
         for _, fofe_alpha in enumerate(fofe_alphas):
-            self.query_fofe_encoder.append(bidirect_fofe(query_input_size, fofe_alpha))
-        self.query_fofe_encoder = nn.ModuleList(self.query_fofe_encoder)
+            self.fofe_encoders.append(bidirect_fofe(query_input_size, fofe_alpha))
+        self.fofe_encoders = nn.ModuleList(self.fofe_encoders)
 
     def forward(self, query_emb, query_mask, batch_size,n_cands_ans):
         query_fofe = []
-        for q_fofe_encoder in self.query_fofe_encoder:
+        for q_fofe_encoder in self.fofe_encoders:
             _query_fofe = q_fofe_encoder(query_emb, query_mask)
             query_embedding_dim = _query_fofe.size(-1)
             query_fofe.append(_query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim))
