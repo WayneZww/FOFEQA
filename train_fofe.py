@@ -61,7 +61,7 @@ def main():
         model = DocReaderModel(opt, embedding)
         epoch_0 = 1
         best_val_score = 0.0
-    
+
     dev_em_record = []
     dev_f1_record = []
     sample_em_record = []
@@ -338,15 +338,17 @@ def test_process(dev, dev_y, args, model, log, mode='dev'):
 
 def test_draw(dev, dev_y, args, model, log, mode='dev'):
     batches = BatchGen(dev, args.batch_size, evaluation=True, gpu=args.cuda, draw_score=args.draw_score)
-    # for i, batch in enumerate(batches):
-    #     model.draw_predict(batch)
-    #     log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
+    for i, batch in enumerate(batches):
+        model.draw_predict(batch)
+        log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
+    """
     predictions = []
     for i, batch in enumerate(batches):
         predictions.extend(model.predict(batch))
         log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
     em, f1 = score(predictions, dev_y)
     log.warning("GT EM: {} F1: {}".format(em, f1))
+    """
 
 
 

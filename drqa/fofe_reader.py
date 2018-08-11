@@ -202,9 +202,12 @@ class FOFEReader(nn.Module):
                 ans_e = target_e[i].item()
                 ans_span = ans_e - ans_s
                 doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.fofe_encoders[0].doc_len_limit)
-                max_cand_len = self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit
-                assert max_cand_len >= ans_span, ("BAD SETTING - max_cand_len should alway be > cand_len/ans_span; "
+                max_cand_len = min(doc_len, self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit)
+                assert max_cand_len >= ans_span, ("max_cand_len should alway be > cand_len/ans_span; "
                                                   "CURRENT: max_cand_len = {0}, ans_span = {1}".format(max_cand_len, ans_span))
+                assert doc_len >= max_cand_len, ("doc_len should alway be > max_cand_len; "
+                                                  "CURRENT: doc_len = {0}, max_cand_len = {1}".format(doc_len, max_cand_len))
+
                 currbatch_base_idx = i * n_cands_ans
                 nextbatch_base_idx = (i+1) * n_cands_ans
                 ans_idx = self.doc_fofe_tricontext_encoder.fofe_encoders[0].forward_fofe\
@@ -385,31 +388,31 @@ class FOFEReader(nn.Module):
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
             loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
-            #import pdb;pdb.set_trace()
+            # import pdb;pdb.set_trace()
             return loss
         elif self.opt['draw_score']:
-            # Wayne's Version:
+            # Wayne's Version - to test target in Training vs in Data (should have 100 EM):
             # dq_input, target_score, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
             # scores = self.fnn(dq_input)
             # scores = F.softmax(scores, dim=1)
             # target_score = target_score.float()
             # target_score.data.masked_fill_(d_mask.data, -float('inf'))
             # s_idxs, e_idxs = self.rank_select(target_score, starts, ends)
-
-            dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
-            target_score = target_score.squeeze(0).float()
-            target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
-            batch_size = query.size(0)
-            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, target_score, batch_size)
-            return predict_s, predict_e
-            """
+            
+            # Sed's Version - to test target in Training vs in Data (should have 100 EM):
+            # dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
+            # target_score = target_score.squeeze(0).float()
+            # target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
+            # batch_size = query.size(0)
+            # predict_s, predict_e = self.rank_cand_select(cands_ans_pos, target_score, batch_size)
+            # return predict_s, predict_e
+            
             dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
             score = self.fnn(dq_input)
             score = F.softmax(score, dim=1)
             score = score[:,1,:].squeeze(0)
             target_score = target_score.squeeze(0)
             return score, target_score, cands_ans_pos, padded_cands_mask
-            """
         else:
             # Wayne's Version:
             # dq_input, starts, ends, d_mask = self.scan_all(doc_emb, doc_mask, query_emb, query_mask)

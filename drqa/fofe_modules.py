@@ -481,6 +481,7 @@ class fofe_tricontext(nn.Module):
         _base_tril_alpha.copy_(self._full_base_block_alpha.tril()[:doc_len,:doc_len])
         _base_tril_inv_alpha.copy_(self._full_base_tril_inv_alpha[:doc_len,:doc_len])
         
+        #calculate number of candidate (aka n_cand); and set max_cand_len = min(doc_len, self.cand_len_limit)
         n_cand, max_cand_len = count_num_substring(self.cand_len_limit, doc_len)
         context_alpha_buffers = []
         cands_pos = x_input.new_zeros(n_cand,2)
