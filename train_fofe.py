@@ -162,7 +162,7 @@ def setup():
                         help='sampling numbers for each doc; \
                         if sn = 0 and nr = 0, will will ignore sampling; \
                         if sn = 0 and nr > 0, will will duplicate up positive sample to match 1-nr ratio.')
-    parser.add_argument('-nr', '--neg_ratio', type=float, default=1/2,
+    parser.add_argument('-nr', '--neg_ratio', type=float, default=1,
                         help='ratio of negtive sample for each doc')
     parser.add_argument('-rs', '--resume', default='best_model.pt',
                         help='previous model file name (in `model_dir`). '
@@ -176,7 +176,7 @@ def setup():
     parser.add_argument('-wd', '--weight_decay', type=float, default=0)
     parser.add_argument('-ae', '--adam_eps', type=float, default=1e-08,
                         help='adam eps.')
-    parser.add_argument('-lr', '--learning_rate', type=float, default=0.1,
+    parser.add_argument('-lr', '--learning_rate', type=float, default=0.002,
                         help='only applied to SGD.')
     parser.add_argument('-mm', '--momentum', type=float, default=0,
                         help='only applied to SGD.')
@@ -437,7 +437,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-                
+
             if self.draw_score:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, y_s, y_e, question, text, span)
