@@ -47,7 +47,7 @@ def main():
             
         # Test  dev and total train
         if args.draw_score:
-            test_draw(train, train_y, args, model, log, mode='train')
+            test_draw(dev, args, model, log, mode='dev')
             return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
@@ -280,7 +280,7 @@ def load_data(opt):
         data = msgpack.load(f, encoding='utf8')
     
     data['dev'].sort(key=lambda x: len(x[1]))
-    dev = [x[:-1] for x in data['dev']]
+    dev = [x[:] for x in data['dev']]
     dev_y = [x[-1] for x in data['dev']]
 
     data['train'].sort(key=lambda x: len(x[1]))
@@ -336,8 +336,17 @@ def test_process(dev, dev_y, args, model, log, mode='dev'):
     return em, f1
 
 
-def test_draw(dev, dev_y, args, model, log, mode='dev'):
-    batches = BatchGen(dev, args.batch_size, evaluation=True, gpu=args.cuda, draw_score=args.draw_score)
+def test_draw(dev, args, model, log, mode='dev'):
+    test_train = True
+    if mode == 'dev':
+        log.warning("Drawing dev set's score:")
+        test_train = False
+    elif mode == 'train':
+        log.warning("Drawing total train set's score:")
+    elif mode == 'sample_train':
+        log.warning("Drawing sampled train set's score:")
+
+    batches = BatchGen(dev, args.batch_size, test_train=test_train, evaluation=True, gpu=args.cuda, draw_score=args.draw_score)
     for i, batch in enumerate(batches):
         model.draw_predict(batch)
         log.debug('> Drawing [{}/{}]'.format(i, len(batches)))
@@ -346,7 +355,7 @@ def test_draw(dev, dev_y, args, model, log, mode='dev'):
     for i, batch in enumerate(batches):
         predictions.extend(model.predict(batch))
         log.debug('> evaluating [{}/{}]'.format(i, len(batches)))
-    em, f1 = score(predictions, dev_y)
+    em, f1 = score(predictions, dev_y)  #NOTED: before commented this out, the dev_y used to be taken from func's parameter
     log.warning("GT EM: {} F1: {}".format(em, f1))
     """
 
@@ -387,8 +396,8 @@ class BatchGen:
             batch_size = len(batch)
             batch = list(zip(*batch))
 
-            if self.eval and not self.test_train and not self.draw_score:
-                assert len(batch) == 9
+            if self.eval and not self.test_train:
+                assert len(batch) == 10
             else:
                 assert len(batch) == 12
 
@@ -428,8 +437,7 @@ class BatchGen:
                 y_e = torch.LongTensor(batch[-1])
             if self.draw_score:
                 question = list(batch[8])
-                y_s = torch.LongTensor(batch[-2])
-                y_e = torch.LongTensor(batch[-1])
+                y_ans = list(batch[9])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
@@ -440,8 +448,9 @@ class BatchGen:
                 question_mask = question_mask.pin_memory()
 
             if self.draw_score:
+                #import pdb;pdb.set_trace()
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
-                       question_id, question_mask, y_s, y_e, question, text, span)
+                       question_id, question_mask, y_ans, question, text, span)
             else:
                 if self.eval:
                     yield (context_id, context_feature, context_tag, context_ent, context_mask,
