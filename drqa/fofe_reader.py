@@ -118,10 +118,10 @@ class FOFEReader(nn.Module):
         # TODO: DISCUSS WITH WAYNE; for now when opt['neg_ratio'] <= 0, just use default weight
         # originally: self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         if opt['neg_ratio'] > 0:
-            self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
+            self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]), ignore_index=-1)
         else:
-            self.ce_loss = nn.CrossEntropyLoss()
-
+            self.ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
+        print(self)
         self.apply(self.weights_init)
         self.count=0
 
@@ -250,10 +250,11 @@ class FOFEReader(nn.Module):
 
     #--------------------------------------------------------------------------------
            
-    def sample_via_conv(self, doc_emb, doc_mask, query_emb, query_mask, target_s=None, target_e=None):
+    def sample_via_conv(self, doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
+        pos_tagger = doc_pos[:,:,7]
 
         if target_s is not None:
             ans_span = target_e - target_s
@@ -274,6 +275,7 @@ class FOFEReader(nn.Module):
         forward_ans_batch = []
         inverse_ans_batch = []
         mask_batch = []
+        pos_batch = []
         starts = []
         ends = []
         for i in range(max_len):
@@ -291,7 +293,15 @@ class FOFEReader(nn.Module):
                     if ans_len == i+1:
                         can_score[j, :, i, ans_e:ans_s+i+1].fill_(1)
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
+            # add pos tagger
+            _pos_tagger = doc_emb.new_zeros(pos_tagger.shape, dtype=torch.long)
+            for j in range(batchsize):
+                for k in range(doc_len):
+                    if pos_tagger[j, k].item() == 1:
+                        for t in range(i+1):
+                            _pos_tagger[j, min(k+t, doc_len-1)].fill_(1)
 
+            pos_batch.append(_pos_tagger[:, i:])
             mask_batch.append(doc_mask[:, i:])
             starts.append(torch.arange(0, doc_len-i, device=doc_emb.device))
             ends.append(torch.arange(i, doc_len, device=doc_emb.device))
@@ -310,8 +320,9 @@ class FOFEReader(nn.Module):
             query_batch.append(query_fofe)
         query_batch = torch.cat(query_batch, dim=-1)  
         dq_input = torch.cat([forward_ans_batch, inverse_ans_batch, l_ctx_ex_batch, l_ctx_in_batch, r_ctx_ex_batch, r_ctx_in_batch, query_batch], dim=1)
-        
+
         mask_batch = torch.cat(mask_batch, dim=-1)
+        pos_batch = torch.cat(pos_batch, dim=-1)
         starts = torch.cat(starts, dim=0).long().unsqueeze(-1)
         ends = torch.cat(ends, dim=0).long().unsqueeze(-1)
         cands_ans_pos = torch.cat([starts, ends], dim=-1)
@@ -319,13 +330,17 @@ class FOFEReader(nn.Module):
         # change size
         dq_input = torch.reshape(dq_input.transpose(-1,-2), (dq_input.size(0)*dq_input.size(-1), dq_input.size(1)))
         mask_batch = torch.reshape(mask_batch, (dq_input.size(0), 1))
+        pos_batch = torch.reshape(pos_batch, (dq_input.size(0), 1))
+        mask = mask_batch.long() + pos_batch
+        mask = torch.gt(mask, 0)
         if target_s is not None:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
             #change size
             target_score = torch.reshape(target_score, (dq_input.size(0),))
-            return dq_input, target_score, cands_ans_pos, mask_batch
+            target_score = target_score - mask.long().squeeze(1)
+            return dq_input, target_score, cands_ans_pos, mask
 
-        return dq_input, cands_ans_pos, mask_batch
+        return dq_input, cands_ans_pos, mask
       
 
     def rank_select(self, scores, starts, ends):
@@ -374,18 +389,16 @@ class FOFEReader(nn.Module):
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training and not self.opt['draw_score']:   
-            dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             # dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
-            assert target_score.sum(-1).sum(-1) == 4
             scores = self.fnn(dq_input)
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
-            #import pdb;pdb.set_trace()
             return loss
         elif self.opt['draw_score']:
             # Wayne's Version:
-            dq_input, target_score, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, target_s, target_e)
+            dq_input, target_score, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             # scores = self.fnn(dq_input)
             # scores = F.softmax(scores, dim=1)
             target_score = target_score.float().unsqueeze(-1)
@@ -407,7 +420,7 @@ class FOFEReader(nn.Module):
             """
         else:
             # Wayne's Version:
-            dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask)
+            dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,1:]

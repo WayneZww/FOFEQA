@@ -437,7 +437,7 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-
+                
             if self.draw_score:
                 yield (context_id, context_feature, context_tag, context_ent, context_mask,
                        question_id, question_mask, y_s, y_e, question, text, span)
