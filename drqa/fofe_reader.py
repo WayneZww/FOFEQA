@@ -97,13 +97,13 @@ class FOFEReader(nn.Module):
             self.fnn = nn.Sequential(
                 nn.Linear(fnn_input_size, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.ReLU(inplace=True),
                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.ReLU(inplace=True),
                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
                 nn.BatchNorm1d( opt['hidden_size']*4),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
                 nn.Linear(opt['hidden_size']*4, 2),
             )
@@ -114,6 +114,20 @@ class FOFEReader(nn.Module):
             self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         else:
             self.fl_loss = None
+        
+#         self.sentence_selector = nn.Sequential(
+#                 nn.Linear(fnn_input_size, opt['hidden_size']*4),
+#                 nn.BatchNorm1d( opt['hidden_size']*4),
+#                 nn.ReLU(inplace=True),
+#                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
+#                 nn.BatchNorm1d( opt['hidden_size']*4),
+#                 nn.ReLU(inplace=True),
+#                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
+#                 nn.BatchNorm1d( opt['hidden_size']*4),
+#                 nn.ReLU(inplace=True),
+# #                nn.Dropout(0.1),
+#                 nn.Linear(opt['hidden_size']*4, 2),
+#             )
 
         # TODO: DISCUSS WITH WAYNE; for now when opt['neg_ratio'] <= 0, just use default weight
         # originally: self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
@@ -141,112 +155,29 @@ class FOFEReader(nn.Module):
             predict_s.append(_predict_s)
             predict_e.append(_predict_e)
         return predict_s, predict_e
-            
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, test_mode=False):
-        train_mode = (target_s is not None) and (target_e is not None)
-        n_fofe_alphas = len(self.opt['fofe_alpha'])
-        dq_fofes = []
-        # 1. Construct FOFE Doc & Query Inputs Matrix
-        if test_mode:
-            doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
+    
+    def sample_two_stage(self, doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s=None, target_e=None):
+        pos_tagger = doc_pos[:,:,7]
+        sentence_pos = []
+        ans_target_pos = 0
+        sentence_target_pos = 0
+        sentence_target_len = 0
+        for i in range(pos_tagger.size(-1)):
+            if pos_tagger[:,i].item()==1:
+                sentence_pos.append(i)
+            if target_e.item() == i:
+                ans_target_pos = target_e.item() - sentence_pos[-1]
+                sentence_target_pos = len(sentence_pos)
+        if sentence_target_pos == 0:
+            sentence_target_len = sentence_pos[sentence_target_pos]+1
         else:
-            doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
-        
-        dq_fofes.append(doc_fofe)
-        batch_size = doc_fofe.size(0)
-        n_cands_ans = doc_fofe.size(1)
-        doc_embedding_dim = doc_fofe.size(-1) / n_fofe_alphas
-        
-        query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size,n_cands_ans)
-        dq_fofes.append(query_fofe)       
-        query_embedding_dim = query_fofe.size(-1) / n_fofe_alphas
-        
-        dq_input = torch.cat(dq_fofes, dim=-1)\
-                    .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
+            sentence_target_len = sentence_pos[sentence_target_pos] - sentence_pos[sentence_target_pos-1] + 1
 
-        # 2. In train_mode: Build Target Scores Matrix, and then Sampling.
-        if train_mode:
-            target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
-            _samples_idx = []
-            
-            # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
-            if self.opt['sample_num'] > 0 and self.opt['neg_ratio'] > 0:
-                sample_num = self.opt['sample_num']
-                n_neg_samples = round(sample_num * self.opt['neg_ratio'])
-                n_pos_samples = sample_num - n_neg_samples
-            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] > 0:
-                n_neg_samples = n_cands_ans - 1
-                n_pos_samples = round(n_neg_samples / self.opt['neg_ratio']) - n_neg_samples
-                sample_num = n_pos_samples + n_neg_samples
-            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] <= 0:
-                sample_num = n_cands_ans
-                n_pos_samples = 1
-                n_neg_samples = sample_num - n_pos_samples
-            else:
-                sample_num = self.opt['sample_num']
-                n_pos_samples = 1
-                n_neg_samples = sample_num - n_pos_samples
-            
-            for i in range(target_s.size(0)):
-                # 2.1. Build Target Scores Matrix.
-                ans_s = target_s[i].item()
-                ans_e = target_e[i].item()
-                ans_span = ans_e - ans_s
-                doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].doc_len_limit)
-                max_cand_len = self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].cand_len_limit
-                
-                currbatch_base_idx = i * n_cands_ans
-                nextbatch_base_idx = (i+1) * n_cands_ans
-                ans_idx = self.doc_fofe_tricontext_encoder.doc_fofe_tricontext_encoder[0].forward_fofe\
-                            .get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                target_score[ans_idx] = 1
-                
-                # 2.2. Sampling
-                #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
-                #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
-                if n_pos_samples == 1 and sample_num == n_cands_ans:
-                    currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
-                else:
-                    neg_samples_population = list(range(currbatch_base_idx, ans_idx)) + list(range(ans_idx+1, nextbatch_base_idx))
-                    n_neg_samples_quot, n_neg_samples_mod = divmod(n_neg_samples, len(neg_samples_population))
-                    currbatch_samples_idx = ([ans_idx] * n_pos_samples) + \
-                                            (random.sample(neg_samples_population, n_neg_samples_mod)) + \
-                                            (neg_samples_population * n_neg_samples_quot)
-                random.shuffle(currbatch_samples_idx)
-                _samples_idx += currbatch_samples_idx
-                
-            samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
-            samples_dq_input = dq_input.index_select(0, samples_idx)
-            samples_target_score = target_score.index_select(0, samples_idx)
-
-        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask.
-        if test_mode:
-            # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
-            cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
-            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
-
-        # 3. Determine what to return base on mode
-        #    NOTE: also reshape dq_input and target_score to match conv1d (instead of linear)
-        if (train_mode) and (not test_mode):
-            # 3.1. Train Mode
-            samples_dq_input = samples_dq_input.transpose(-1,-2).unsqueeze(0)
-            samples_target_score = samples_target_score.transpose(-1,-2).long()
-            return samples_dq_input, samples_target_score
-        elif (not train_mode) and (test_mode):
-            # 3.2. Test Mode
-            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
-            return dq_input, cands_ans_pos, padded_cands_mask
-        elif (train_mode) and (test_mode):
-            # 3.3. Draw Score Mode (aka for debuging)
-            dq_input = dq_input.transpose(-1,-2).unsqueeze(0)
-            target_score = target_score.transpose(-1,-2).long()
-            
-            #*****TODO @SED: add debugger to check target_score match with target_s & target_e.*****
-            #import pdb;pdb.set_trace()
-            return dq_input, target_score, cands_ans_pos, padded_cands_mask
-        else:
-            raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
-                             test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
+        sentence_target = doc_emb.new_zeros((len(sentence_pos),)).long()
+        sentence_target[sentence_target_pos] = 1
+        ans_target = doc_emb.new_zeros((sentence_target_len,)).long()
+        ans_target[ans_target_pos] = 1
+        return sentence_pos, sentence_target,  ans_target
 
     #--------------------------------------------------------------------------------
            
@@ -297,9 +228,13 @@ class FOFEReader(nn.Module):
             _pos_tagger = doc_emb.new_zeros(pos_tagger.shape, dtype=torch.long)
             for j in range(batchsize):
                 for k in range(doc_len):
-                    if pos_tagger[j, k].item() == 1:
+                    if pos_tagger[j, k].item() == 1 :
                         for t in range(i+1):
-                            _pos_tagger[j, min(k+t, doc_len-1)].fill_(1)
+                            if target_e[j].item() == k + t :
+                                continue
+                            else:
+                                if k+t <= doc_len-1 :
+                                     _pos_tagger[j, k+t].fill_(1)
 
             pos_batch.append(_pos_tagger[:, i:])
             mask_batch.append(doc_mask[:, i:])
@@ -338,6 +273,8 @@ class FOFEReader(nn.Module):
             #change size
             target_score = torch.reshape(target_score, (dq_input.size(0),))
             target_score = target_score - mask.long().squeeze(1)
+            if torch.eq(target_score, 1).sum() != 4 :
+                import pdb; pdb.set_trace()
             return dq_input, target_score, cands_ans_pos, mask
 
         return dq_input, cands_ans_pos, mask
@@ -402,6 +339,8 @@ class FOFEReader(nn.Module):
             # scores = self.fnn(dq_input)
             # scores = F.softmax(scores, dim=1)
             target_score = target_score.float().unsqueeze(-1)
+            if torch.eq(target_score, 1).sum() != 4 :
+                import pdb; pdb.set_trace()
             target_score.data.masked_fill_(d_mask.data, -float('inf'))
 
             # dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
