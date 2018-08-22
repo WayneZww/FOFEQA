@@ -273,7 +273,7 @@ class FOFEReader(nn.Module):
             #change size
             target_score = torch.reshape(target_score, (dq_input.size(0),))
             target_score = target_score - mask.long().squeeze(1)
-            if torch.eq(target_score, 1).sum() != 4 :
+            if torch.eq(target_score, 1).sum() != batchsize :
                 import pdb; pdb.set_trace()
             return dq_input, target_score, cands_ans_pos, mask
 
