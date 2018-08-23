@@ -412,7 +412,7 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.training and not self.opt['draw_score']:  
             sentence_pos, sentence_target,  ans_target_s, ans_target_e = self.sample_two_stage(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
-            sentence_score, sentence_s, sentence_e = self.sentence_select(doc_emb, doc_mask, query_emb, query_mask, sentence_pos)        
+            sentence_score, sentence_s, sentence_e = self.sentence_select(doc_emb, query_emb, query_mask, sentence_pos)        
             if ans_target_s + sentence_s != target_s.item():   
                 ans_target_s = -1
                 ans_target_e = -1
@@ -435,12 +435,15 @@ class FOFEReader(nn.Module):
             else:
                 sentence_s = sentence_pos[idx.item()-1]
                 sentence_e = sentence_pos[idx.item()]        
-            if ans_target_s + sentence_s != target_s.item():   
+            if ans_target_s + sentence_s != target_s.item(): 
+                import pdb;pdb.set_trace()  
                 ans_target_s = -1
                 ans_target_e = -1
 
             dq_input, ans_target, cands_ans_pos = self.sample_via_sentence(doc_emb[:,sentence_s:sentence_e], query_emb, query_mask, ans_target_s, ans_target_e)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, ans_target, 1)
+            predict_s[0] = predict_s[0] + sentence_s
+            predict_e[0] = predict_e[0] + sentence_s
             return predict_s, predict_e
         else:
             # Wayne's Version:
