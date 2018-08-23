@@ -98,16 +98,22 @@ class fofe(nn.Module):
         self.alpha = alpha
         self.inverse = inverse
         
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask=None):
         length = x.size(-2)
         exponent = x.new_empty(x.size(0),1,length)
+
         if self.inverse :
             exponent.copy_(torch.range(0, length-1))
         else:
             exponent.copy_(torch.linspace(length-1,0,length))
-            exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
-        matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
-        fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
+            if x_mask is not None:
+                exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))
+
+        matrix = torch.pow(self.alpha, exponent)
+        if x_mask is not None:
+            matrix = matrix.mul(1-x_mask.unsqueeze(1))
+            
+        fofe_code = torch.bmm(matrix,x).transpose(-1,-2).squeeze(-1)
         return fofe_code
     
     def extra_repr(self):
@@ -377,7 +383,7 @@ class fofe_multi(nn.Module):
 
         self.fofe_matrix = nn.ModuleList(self.fofe_matrix)
     
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask=None):
         fofe_code = []
         for fofe_matrix in self.fofe_matrix:
             fofe_code.append(fofe_matrix(x, x_mask))
