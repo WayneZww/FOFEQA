@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
             
 
-from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter, \
+from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, sed_fofe, fofe_filter, fofe_flex_all, fofe_flex_all_filter, \
                             bidirect_fofe_tricontext, bidirect_fofe, bidirect_fofe_multi_tricontext, bidirect_fofe_multi
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
@@ -23,6 +23,9 @@ class FOFEReader(nn.Module):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
             nn.init.kaiming_normal_(m.weight.data)
+        # good initlize linear
+        #if classname.find('Conv') != -1:
+        #    nn.init.kaiming_normal_(m.weight.data)
         elif classname.find('BatchNorm') != -1:
             m.weight.data.fill_(1.)
             m.bias.data.fill_(1e-4)
@@ -86,7 +89,13 @@ class FOFEReader(nn.Module):
             self.fofe_linear = fofe_multi(fofe_flex_all, opt['embedding_dim'], opt['fofe_alpha'])
 
         # Sed's Version FOFE Encoders
-        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'], doc_input_size, opt)
+        doc_len_limit = 809
+        self.doc_fofe_tricontext_encoder = bidirect_fofe_multi_tricontext(opt['fofe_alpha'],
+                                                                          doc_input_size,
+                                                                          opt['max_len'],
+                                                                          doc_len_limit,
+                                                                          opt['contexts_incl_cand'],
+                                                                          opt['contexts_excl_cand'])
         self.query_fofe_encoder = bidirect_fofe_multi(opt['fofe_alpha'], query_input_size)
 
         if opt['net_arch'] == 'FNN':
@@ -114,20 +123,6 @@ class FOFEReader(nn.Module):
             self.fl_loss = FocalLoss1d(2, gamma=opt['focal_gamma'], alpha=opt['focal_alpha'])
         else:
             self.fl_loss = None
-        
-#         self.sentence_selector = nn.Sequential(
-#                 nn.Linear(fnn_input_size, opt['hidden_size']*4),
-#                 nn.BatchNorm1d( opt['hidden_size']*4),
-#                 nn.ReLU(inplace=True),
-#                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
-#                 nn.BatchNorm1d( opt['hidden_size']*4),
-#                 nn.ReLU(inplace=True),
-#                 nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
-#                 nn.BatchNorm1d( opt['hidden_size']*4),
-#                 nn.ReLU(inplace=True),
-# #                nn.Dropout(0.1),
-#                 nn.Linear(opt['hidden_size']*4, 2),
-#             )
 
         # TODO: DISCUSS WITH WAYNE; for now when opt['neg_ratio'] <= 0, just use default weight
         # originally: self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
@@ -156,28 +151,109 @@ class FOFEReader(nn.Module):
             predict_e.append(_predict_e)
         return predict_s, predict_e
     
-    def sample_two_stage(self, doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s=None, target_e=None):
-        pos_tagger = doc_pos[:,:,7]
-        sentence_pos = []
-        ans_target_pos = 0
-        sentence_target_pos = 0
-        sentence_target_len = 0
-        for i in range(pos_tagger.size(-1)):
-            if pos_tagger[:,i].item()==1:
-                sentence_pos.append(i)
-            if target_e.item() == i:
-                ans_target_pos = target_e.item() - sentence_pos[-1]
-                sentence_target_pos = len(sentence_pos)
-        if sentence_target_pos == 0:
-            sentence_target_len = sentence_pos[sentence_target_pos]+1
-        else:
-            sentence_target_len = sentence_pos[sentence_target_pos] - sentence_pos[sentence_target_pos-1] + 1
 
-        sentence_target = doc_emb.new_zeros((len(sentence_pos),)).long()
-        sentence_target[sentence_target_pos] = 1
-        ans_target = doc_emb.new_zeros((sentence_target_len,)).long()
-        ans_target[ans_target_pos] = 1
-        return sentence_pos, sentence_target,  ans_target
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, test_mode=False):
+        train_mode = (target_s is not None) and (target_e is not None)
+        n_fofe_alphas = len(self.opt['fofe_alpha'])
+        dq_fofes = []
+        # 1. Construct FOFE Doc & Query Inputs Matrix
+        if test_mode:
+            doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
+        else:
+            doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
+        dq_fofes.append(doc_fofe)
+        batch_size = doc_fofe.size(0)
+        n_cands_ans = doc_fofe.size(1)
+        doc_embedding_dim = doc_fofe.size(-1) / n_fofe_alphas
+        
+        query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size, n_cands_ans)
+        dq_fofes.append(query_fofe)       
+        query_embedding_dim = query_fofe.size(-1) / n_fofe_alphas
+        
+        dq_input = torch.cat(dq_fofes, dim=-1)\
+                    .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
+
+        # 2. In train_mode: Build Target Scores Matrix, and then Sampling.
+        if train_mode:
+            target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
+            _samples_idx = []
+            
+            # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
+            if self.opt['sample_num'] > 0 and self.opt['neg_ratio'] > 0:
+                sample_num = self.opt['sample_num']
+                n_neg_samples = round(sample_num * self.opt['neg_ratio'])
+                n_pos_samples = sample_num - n_neg_samples
+            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] > 0:
+                n_neg_samples = n_cands_ans - 1
+                n_pos_samples = round(n_neg_samples / self.opt['neg_ratio']) - n_neg_samples
+                sample_num = n_pos_samples + n_neg_samples
+            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] <= 0:
+                sample_num = n_cands_ans
+                n_pos_samples = 1
+                n_neg_samples = sample_num - n_pos_samples
+            else:
+                sample_num = self.opt['sample_num']
+                n_pos_samples = 1
+                n_neg_samples = sample_num - n_pos_samples
+        
+            for i in range(target_s.size(0)):
+                # 2.1. Build Target Scores Matrix.
+                ans_s = target_s[i].item()
+                ans_e = target_e[i].item()
+                ans_span = ans_e - ans_s
+                doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.fofe_encoders[0].doc_len_limit)
+                max_cand_len = min(doc_len, self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit)
+                if max_cand_len < ans_span:
+                    ans_span = max_cand_len
+                assert max_cand_len >= ans_span, ("max_cand_len should alway be > cand_len/ans_span; "
+                                                  "CURRENT: max_cand_len = {0}, ans_span = {1}".format(max_cand_len, ans_span))
+                assert doc_len >= max_cand_len, ("doc_len should alway be > max_cand_len; "
+                                                  "CURRENT: doc_len = {0}, max_cand_len = {1}".format(doc_len, max_cand_len))
+
+                currbatch_base_idx = i * n_cands_ans
+                nextbatch_base_idx = (i+1) * n_cands_ans
+                ans_idx = self.doc_fofe_tricontext_encoder.fofe_encoders[0].forward_fofe\
+                            .get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
+                target_score[ans_idx] = 1
+                
+                # 2.2. Sampling
+                #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
+                #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
+                if n_pos_samples == 1 and sample_num == n_cands_ans:
+                    currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
+                else:
+                    neg_samples_population = list(range(currbatch_base_idx, ans_idx)) + list(range(ans_idx+1, nextbatch_base_idx))
+                    n_neg_samples_quot, n_neg_samples_mod = divmod(n_neg_samples, len(neg_samples_population))
+                    currbatch_samples_idx = ([ans_idx] * n_pos_samples) + \
+                                            (random.sample(neg_samples_population, n_neg_samples_mod)) + \
+                                            (neg_samples_population * n_neg_samples_quot)
+                random.shuffle(currbatch_samples_idx)
+                _samples_idx += currbatch_samples_idx
+                
+            samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
+            samples_dq_input = dq_input.index_select(0, samples_idx)
+            samples_target_score = target_score.index_select(0, samples_idx)
+
+        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask.
+        if test_mode:
+            # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
+            cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
+            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1]).squeeze(-1)
+
+        # 3. Determine what to return base on mode
+        #    NOTE: also reshape dq_input and target_score to match conv1d (instead of linear)
+        if (train_mode) and (not test_mode):
+            # 3.1. Train Mode
+            return samples_dq_input, samples_target_score.long().squeeze(-1)
+        elif (not train_mode) and (test_mode):
+            # 3.2. Test Mode and Draw Score Mode for Dev Set
+            return dq_input, cands_ans_pos, padded_cands_mask
+        elif (train_mode) and (test_mode):
+            # 3.3. Draw Score Mode for Train Set (aka for debuging target_s and target_e)
+            return dq_input, target_score.long().squeeze(-1), cands_ans_pos, padded_cands_mask
+        else:
+            raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
+                             test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
 
     #--------------------------------------------------------------------------------
            
@@ -278,21 +354,7 @@ class FOFEReader(nn.Module):
             return dq_input, target_score, cands_ans_pos, mask
 
         return dq_input, cands_ans_pos, mask
-      
-
-    def rank_select(self, scores, starts, ends):
-        batchsize = scores.size(0)
-        s_idxs = []
-        e_idxs = []       
-        for i in range(batchsize):
-            v, idx = torch.max(scores[i], dim=0)
-            # if v < 0.5:
-            #     s_idxs.append(-1)
-            #     e_idxs.append(-1)
-            # else:
-            s_idxs.append(starts[idx.item()].item())                                                                                                                                                    
-            e_idxs.append(ends[idx.item()].item())
-        return s_idxs, e_idxs                    
+    
 
     def input_embedding(self, doc, doc_f, doc_pos, doc_ner, query):
         # Embed both document and question
@@ -325,53 +387,42 @@ class FOFEReader(nn.Module):
         query_mask = question padding mask          [batch * len_q]
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
-        if self.training and not self.opt['draw_score']:   
-            dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
-            # dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
+        
+        if self.opt['draw_score']:
+            if self.opt['version'] == 's' :
+                dq_input, cands_ans_pos, _ = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+            else:
+                dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+            scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
+            scores = scores[:,1:].squeeze(-1)
+            return scores, cands_ans_pos
+
+        if not self.training:
+            if self.opt['version'] == 's' :
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+            else:
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
+            scores = self.fnn(dq_input)
+            scores = F.softmax(scores, dim=1)
+            scores = scores[:,1:]
+            scores.masked_fill_(padded_cands_mask.unsqueeze(-1), -float('inf'))
+            batch_size = query.size(0)
+            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
+            return predict_s, predict_e
+
+        if self.training:
+            if self.opt['version'] == 's' :
+                dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
+            else:
+                dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             scores = self.fnn(dq_input)
             loss = self.ce_loss(scores, target_score)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
+            #loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
             return loss
-        elif self.opt['draw_score']:
-            # Wayne's Version:
-            dq_input, target_score, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
-            # scores = self.fnn(dq_input)
-            # scores = F.softmax(scores, dim=1)
-            target_score = target_score.float().unsqueeze(-1)
-            if torch.eq(target_score, 1).sum() != 4 :
-                import pdb; pdb.set_trace()
-            target_score.data.masked_fill_(d_mask.data, -float('inf'))
 
-            # dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
-            # target_score = target_score.squeeze(0).float()
-            # target_score.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
-            batch_size = query.size(0)
-            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, target_score, batch_size)
-            return predict_s, predict_e
-            """
-            dq_input, target_score, cands_ans_pos, padded_cands_mask= self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=True)
-            score = self.fnn(dq_input)
-            score = F.softmax(score, dim=1)
-            score = score[:,1,:].squeeze(0)
-            target_score = target_score.squeeze(0)
-            return score, target_score, cands_ans_pos, padded_cands_mask
-            """
-        else:
-            # Wayne's Version:
-            dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            scores = scores[:,1:]
-            scores.data.masked_fill_(d_mask.data, -float('inf'))
-            # return s_idxs, e_idxs
+            
 
-            # dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
-            # scores = self.fnn(dq_input)
-            # scores = scores[:,1,:].squeeze(0)
-            # scores.masked_fill_(padded_cands_mask.squeeze(-1), -float('inf'))
-
-            batch_size = query.size(0)
-            predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
-            return predict_s, predict_e
 

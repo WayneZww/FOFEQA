@@ -108,38 +108,39 @@ class fofe(nn.Module):
             exponent.add_( x_mask.sum(1).unsqueeze(-1).unsqueeze(-1).mul(-1))   
         matrix = torch.pow(self.alpha, exponent).mul(1-x_mask.unsqueeze(1))
         fofe_code = torch.bmm(matrix,x).transpose(-1,-2)
+
         return fofe_code
     
     def extra_repr(self):
         return 'alpha={alpha}, inverse={inverse}'.format(**self.__dict__)
 
-
-# class fofe(nn.Module):
-#     def __init__(self, channels, alpha, inverse=False):
-#         super(fofe, self).__init__()
-#         self.alpha = alpha
-#         self.inverse = inverse
+# Sed's version of fofe, need merge, different in shape
+class sed_fofe(nn.Module):
+    def __init__(self, channels, alpha, inverse=False):
+        super(sed_fofe, self).__init__()
+        self.alpha = alpha
+        self.inverse = inverse
     
-#     def forward(self, x_input, x_mask):
-#         length = x_input.size(-2)
+    def forward(self, x_input, x_mask):
+        length = x_input.size(-2)
         
-#         # Construct Alphas Buffer
-#         alpha_buffer = x_input.new_empty(x_input.size(0),1,length)
-#         if self.inverse:
-#             alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.range(0, length-1)))
-#         else:
-#             alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
-#             alpha_buffer_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
-#             alpha_buffer.copy_(torch.bmm(alpha_buffer_padding_rm, alpha_buffer))
+        # Construct Alphas Buffer
+        alpha_buffer = x_input.new_empty(x_input.size(0),1,length)
+        if self.inverse:
+            alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.range(0, length-1)))
+        else:
+            alpha_buffer[:,].copy_(torch.pow(self.alpha,torch.linspace(length-1,0,length)))
+            alpha_buffer_padding_rm = torch.pow(self.alpha,-1*torch.sum(x_mask,dim=1).float()).unsqueeze(-1).unsqueeze(-1)
+            alpha_buffer.copy_(torch.bmm(alpha_buffer_padding_rm, alpha_buffer))
 
-#         # Adjust Alpha Buffer to accommondate the padding
-#         rev_x_mask = (1 - x_mask).unsqueeze(1).float()
-#         alpha_buffer.copy_(torch.mul(alpha_buffer, rev_x_mask))
+        # Adjust Alpha Buffer to accommondate the padding
+        rev_x_mask = (1 - x_mask).unsqueeze(1).float()
+        alpha_buffer.copy_(torch.mul(alpha_buffer, rev_x_mask))
         
-#         # Compute FOFE Code
-#         fofe_code = torch.bmm(alpha_buffer,x_input).squeeze(-2)
+        # Compute FOFE Code
+        fofe_code = torch.bmm(alpha_buffer,x_input).squeeze(-2)
         
-#         return fofe_code
+        return fofe_code
 
 
 class fofe_flex(nn.Module):
@@ -421,7 +422,7 @@ class fofe_multi_encoder(fofe_encoder):
 
 
 class fofe_tricontext(nn.Module):
-    def __init__(self, embedding_dim, alpha, cand_len_limit=10, doc_len_limit=46, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True, inverse=False):
+    def __init__(self, embedding_dim, alpha, cand_len_limit=10, doc_len_limit=809, has_lr_ctx_cand_incl=True, has_lr_ctx_cand_excl=True, inverse=False):
         super(fofe_tricontext, self).__init__()
         self.alpha = alpha
         self.cand_len_limit = cand_len_limit
@@ -481,6 +482,7 @@ class fofe_tricontext(nn.Module):
         _base_tril_alpha.copy_(self._full_base_block_alpha.tril()[:doc_len,:doc_len])
         _base_tril_inv_alpha.copy_(self._full_base_tril_inv_alpha[:doc_len,:doc_len])
         
+        #calculate number of candidate (aka n_cand); and set max_cand_len = min(doc_len, self.cand_len_limit)
         n_cand, max_cand_len = count_num_substring(self.cand_len_limit, doc_len)
         context_alpha_buffers = []
         cands_pos = x_input.new_zeros(n_cand,2)
@@ -640,8 +642,8 @@ class bidirect_fofe_tricontext(nn.Module):
 class bidirect_fofe(nn.Module):
     def __init__(self, channels, alpha):
         super(bidirect_fofe, self).__init__()
-        self.forward_fofe = fofe(channels, alpha, inverse=False)
-        self.backward_fofe = fofe(channels, alpha, inverse=True)
+        self.forward_fofe = sed_fofe(channels, alpha, inverse=False)
+        self.backward_fofe = sed_fofe(channels, alpha, inverse=True)
 
     def forward(self, x_input, x_mask):
         forward_fofe_code = self.forward_fofe(x_input, x_mask)
@@ -651,22 +653,22 @@ class bidirect_fofe(nn.Module):
 
 
 class bidirect_fofe_multi_tricontext(nn.Module):
-    def __init__(self, fofe_alphas, doc_input_size, opt):
+    # bidirect_fofe_multi_tricontext encoder design for doc input.
+    def __init__(self, fofe_alphas, doc_input_size, cand_len_limit, doc_len_limit, contexts_incl_cand, contexts_excl_cand):
         super(bidirect_fofe_multi_tricontext, self).__init__()
-        self.doc_fofe_tricontext_encoder = []
+        self.fofe_encoders = []
         for _, fofe_alpha in enumerate(fofe_alphas):
-            doc_len_limit = 809
-            self.doc_fofe_tricontext_encoder.append(bidirect_fofe_tricontext(doc_input_size,
-                                                                    fofe_alpha,
-                                                                    cand_len_limit=opt['max_len'],
-                                                                    doc_len_limit=doc_len_limit,
-                                                                    has_lr_ctx_cand_incl=opt['contexts_incl_cand'],
-                                                                    has_lr_ctx_cand_excl=opt['contexts_excl_cand']))        
-        self.doc_fofe_tricontext_encoder = nn.ModuleList(self.doc_fofe_tricontext_encoder)
+            self.fofe_encoders.append(bidirect_fofe_tricontext(doc_input_size,
+                                                               fofe_alpha,
+                                                               cand_len_limit=cand_len_limit,
+                                                               doc_len_limit=doc_len_limit,
+                                                               has_lr_ctx_cand_incl=contexts_incl_cand,
+                                                               has_lr_ctx_cand_excl=contexts_excl_cand))
+        self.fofe_encoders = nn.ModuleList(self.fofe_encoders)
     
     def forward(self, doc_emb, doc_mask, test_mode=False):
         doc_fofe = []
-        for d_fofe_encoder in self.doc_fofe_tricontext_encoder:
+        for d_fofe_encoder in self.fofe_encoders:
             if test_mode:
                 _doc_fofe, _cands_ans_pos, _padded_cands_mask = d_fofe_encoder(doc_emb, doc_mask, test_mode)
             else:
@@ -681,16 +683,17 @@ class bidirect_fofe_multi_tricontext(nn.Module):
 
         
 class bidirect_fofe_multi(nn.Module):
+    # bidirect_fofe_multi encoder design for query input.
     def __init__(self, fofe_alphas, query_input_size):
         super(bidirect_fofe_multi, self).__init__()
-        self.query_fofe_encoder = []
+        self.fofe_encoders = []
         for _, fofe_alpha in enumerate(fofe_alphas):
-            self.query_fofe_encoder.append(bidirect_fofe(query_input_size, fofe_alpha))
-        self.query_fofe_encoder = nn.ModuleList(self.query_fofe_encoder)
+            self.fofe_encoders.append(bidirect_fofe(query_input_size, fofe_alpha))
+        self.fofe_encoders = nn.ModuleList(self.fofe_encoders)
 
     def forward(self, query_emb, query_mask, batch_size,n_cands_ans):
         query_fofe = []
-        for q_fofe_encoder in self.query_fofe_encoder:
+        for q_fofe_encoder in self.fofe_encoders:
             _query_fofe = q_fofe_encoder(query_emb, query_mask)
             query_embedding_dim = _query_fofe.size(-1)
             query_fofe.append(_query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim))
