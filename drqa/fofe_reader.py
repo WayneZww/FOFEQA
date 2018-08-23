@@ -95,14 +95,11 @@ class FOFEReader(nn.Module):
             self.fnn = FOFE_NN_att(fnn_input_size, opt['hidden_size'])
         elif opt['net_arch'] == 'simple':
             self.fnn = nn.Sequential(
-                nn.Linear(fnn_input_size, opt['hidden_size']*4),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Linear(fnn_input_size, opt['hidden_size']*4, bias=True),
                 nn.ReLU(inplace=True),
-                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4, bias=True),
                 nn.ReLU(inplace=True),
-                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4),
-                nn.BatchNorm1d( opt['hidden_size']*4),
+                nn.Linear(opt['hidden_size']*4, opt['hidden_size']*4, bias=True),
                 nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
                 nn.Linear(opt['hidden_size']*4, 2),
