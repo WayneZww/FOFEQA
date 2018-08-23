@@ -230,7 +230,7 @@ class FOFEReader(nn.Module):
                 for k in range(doc_len):
                     if pos_tagger[j, k].item() == 1 :
                         for t in range(i+1):
-                            if target_e[j].item() == k + t :
+                            if target_e is not None and target_e[j].item() == k + t :
                                 continue
                             else:
                                 if k+t <= doc_len-1 :
