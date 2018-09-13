@@ -238,7 +238,7 @@ class FOFEReader(nn.Module):
         if test_mode:
             # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
-            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1]).squeeze(-1)
+            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
 
         # 3. Determine what to return base on mode
         #    NOTE: also reshape dq_input and target_score to match conv1d (instead of linear)
@@ -406,7 +406,8 @@ class FOFEReader(nn.Module):
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,1:]
-            scores.masked_fill_(padded_cands_mask.unsqueeze(-1), -float('inf'))
+            #import pdb; pdb.set_trace()
+            scores.masked_fill_(padded_cands_mask, -float('inf'))
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
             return predict_s, predict_e
