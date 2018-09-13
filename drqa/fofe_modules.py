@@ -674,7 +674,7 @@ class bidirect_fofe_multi_tricontext(nn.Module):
             else:
                 _doc_fofe = d_fofe_encoder(doc_emb, doc_mask, test_mode)
             doc_fofe.append(_doc_fofe)
-            doc_fofe = torch.cat(doc_fofe, dim=-1)
+        doc_fofe = torch.cat(doc_fofe, dim=-1)
 
         if test_mode:
             return doc_fofe, _cands_ans_pos, _padded_cands_mask
@@ -697,7 +697,6 @@ class bidirect_fofe_multi(nn.Module):
             _query_fofe = q_fofe_encoder(query_emb, query_mask)
             query_embedding_dim = _query_fofe.size(-1)
             query_fofe.append(_query_fofe.unsqueeze(1).expand(batch_size,n_cands_ans,query_embedding_dim))
-    
         query_fofe = torch.cat(query_fofe, dim=-1)
         return query_fofe
 

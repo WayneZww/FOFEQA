@@ -46,9 +46,6 @@ def main():
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
             
         # Test  dev and total train
-        if args.draw_score:
-            test_draw(dev, args, model, log, mode='dev')
-            return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
 
@@ -62,6 +59,7 @@ def main():
         epoch_0 = 1
         best_val_score = 0.0
 
+    # Draw Score
     if args.draw_score:
         test_draw(dev, args, model, log, mode='dev')
         return
@@ -209,7 +207,7 @@ def setup():
     parser.add_argument('--dropout_emb', type=float, default=0.4)
     parser.add_argument('--max_len', type=int, default=15)
     parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
-                        help='use comma as separator for dual-fofe; (e.g. 0.4 0.8).')
+                        help='use space as separator for dual-fofe; (e.g. 0.4 0.8).')
     parser.add_argument('--fofe_max_length', type=int, default=64)
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
