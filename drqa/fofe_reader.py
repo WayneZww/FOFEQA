@@ -134,6 +134,7 @@ class FOFEReader(nn.Module):
         self.apply(self.weights_init)
         self.count=0
 
+
     def rank_cand_select(self, cands_ans_pos, scores, batch_size):
         n_cands = scores.size(0)
         assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
@@ -151,8 +152,52 @@ class FOFEReader(nn.Module):
             predict_e.append(_predict_e)
         return predict_s, predict_e
     
+    
+    @staticmethod
+    def find_sentence_boundary_from_pos_tagger(doc_pos, get_stacked_batch=False):
+        """
+            doc_pos = document/context POS tags; [batch * len_d * n_pos_types]
+        """
+        #sent_boundary_pos_type = torch.Tensor([ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  1.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.])
+        #TODO: check that '?' and '!' also have this pos_type
+        sent_boundary_pos_type_idx = 7
+        if get_stacked_batch:
+            doc_pos = doc_pos.view([doc_pos.size(0) * doc_pos.size(1), doc_pos.size(2)])
+            sent_boundaries = doc_pos[:,sent_boundary_pos_type_idx].nonzero()
+        else:
+            sent_boundaries  = doc_pos[:,:,sent_boundary_pos_type_idx].nonzero()
+        return sent_boundaries
 
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, target_s=None, target_e=None, test_mode=False):
+
+    @staticmethod
+    def get_nearest_sent_s_and_e(target_idx, target_batch, sent_boundary):
+        """
+            sent_boundary - is a tensor of sentence boundaries where
+                            sent_boundary[:,1] is boundary index, and
+                            sent_boundary[:,0] is boundary batch
+        """
+        n_sent_boundaries__all_batch = sent_boundary.size(0)
+        prev_sent_boundary_batch = 0
+        prev_sent_boundary_idx = -1
+        for i in range(n_sent_boundaries__all_batch):
+            curr_sent_boundary_batch = sent_boundary[i, 0].item()
+            curr_sent_boundary_idx = sent_boundary[i, 1].item()
+            if prev_sent_boundary_batch != curr_sent_boundary_batch:
+                # if prev sent boundary is in the last batch, then set it to curr batch and reset prev_sent_boundary_idx to -1
+                prev_sent_boundary_batch = curr_sent_boundary_batch
+                prev_sent_boundary_idx = -1
+            if target_batch == curr_sent_boundary_batch:
+                # if curr batch is the correct one, then check for matching boundary index
+                if prev_sent_boundary_idx < target_idx and curr_sent_boundary_idx >= target_idx:
+                    sent_s = prev_sent_boundary_idx+1
+                    sent_e = curr_sent_boundary_idx
+                    return sent_s, sent_e
+            prev_sent_boundary_batch = curr_sent_boundary_batch
+            prev_sent_boundary_idx = curr_sent_boundary_idx
+        return None, None
+
+
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, doc_pos=None, target_s=None, target_e=None, test_mode=False):
         train_mode = (target_s is not None) and (target_e is not None)
         n_fofe_alphas = len(self.opt['fofe_alpha'])
         dq_fofes = []
@@ -198,9 +243,10 @@ class FOFEReader(nn.Module):
         
             for i in range(target_s.size(0)):
                 # 2.1. Build Target Scores Matrix.
+                # 2.1.1. get parameter value required to find ans_idx
                 ans_s = target_s[i].item()
                 ans_e = target_e[i].item()
-                ans_span = ans_e - ans_s
+                ans_span = ans_e - ans_s    # NOTED: ans with 1 word will have ans_span = 0 (not 1).
                 doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.fofe_encoders[0].doc_len_limit)
                 max_cand_len = min(doc_len, self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit)
                 if max_cand_len < ans_span:
@@ -210,15 +256,49 @@ class FOFEReader(nn.Module):
                 assert doc_len >= max_cand_len, ("doc_len should alway be > max_cand_len; "
                                                   "CURRENT: doc_len = {0}, max_cand_len = {1}".format(doc_len, max_cand_len))
 
+                # 2.1.2. get parameter value required to find candidates overlapping with ans
+                sent_boundary_idxs = FOFEReader.find_sentence_boundary_from_pos_tagger(doc_pos)
+                sent_s, sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_s, i, sent_boundary_idxs)
+                _sent_s, _sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_e, i, sent_boundary_idxs)
+                assert sent_s == _sent_s and sent_e == _sent_e, ("ans_s (idx={0}) and ans_e (idx={1}) should always be in the same sentence; i.e. no cross-sentence target ans".format(ans_s, ans_e))
+                assert sent_s != None and sent_e != None, ("ans_s (idx={0}) should always be some where in the doc".format(ans_s))
+                assert _sent_s != None and _sent_e != None, ("ans_e (idx={0}) should always be some where in the doc".format(ans_e))
+                sub_ans = [(s,e,e-s) for s in range(ans_s, ans_e+1)
+                           for e in range(s, ans_e+1)
+                           if (s != ans_s or e != ans_e)]               #list of cands who is a substring of ans
+                super_ans = [(s,e,e-s) for s in range(sent_s, ans_s+1)
+                             for e in range(ans_e, sent_e+1)
+                             if (s != ans_s or e != ans_e)]             #list of cands who is a superstring of ans
+                front_relative_ans = [(s,e,e-s) for s in range(sent_s, ans_s)
+                                      for e in range(ans_s, ans_e)
+                                      if (s != ans_s or e != ans_e)]    #list of cands who has an intersected string with (front substring of) ans
+                rear_relative_ans = [(s,e,e-s) for s in range(ans_s+1, ans_e+1)
+                                    for e in range(ans_e+1, sent_e+1)
+                                    if (s != ans_s or e != ans_e)]      #list of cands who has an intersected string with (rear substring of) ans
+                overlapping_ans = sub_ans + super_ans + front_relative_ans + rear_relative_ans
+                overlapping_ans = [(s,e,span) for s,e,span in overlapping_ans if span <= max_cand_len] # remove too long candidate
+                
+                # 2.1.3. get ans_idx and set target_score value
+                def func_get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx):
+                    return self.doc_fofe_tricontext_encoder\
+                            .fofe_encoders[0]\
+                            .forward_fofe\
+                            .get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx)
                 currbatch_base_idx = i * n_cands_ans
-                nextbatch_base_idx = (i+1) * n_cands_ans
-                ans_idx = self.doc_fofe_tricontext_encoder.fofe_encoders[0].forward_fofe\
-                            .get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
+                ans_idx = func_get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
                 target_score[ans_idx] = 1
                 
+                # 2.1.4. get overlapping_ans_idx and set target_score value
+                for ovlp_ans_s, ovlp_ans_e, ovlp_ans_span in overlapping_ans:
+                    overlapping_ans_idx = func_get_sample_idx(ovlp_ans_s, ovlp_ans_span, doc_len, max_cand_len, currbatch_base_idx)
+                    target_score[overlapping_ans_idx] = 0.5
+                    assert overlapping_ans_idx != ans_idx, ("ans should not be in list of candidates overlapping with ans")
+                #import pdb; pdb.set_trace()
+
                 # 2.2. Sampling
                 #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
                 #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
+                nextbatch_base_idx = (i+1) * n_cands_ans
                 if n_pos_samples == 1 and sample_num == n_cands_ans:
                     currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
                 else:
@@ -254,9 +334,9 @@ class FOFEReader(nn.Module):
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
                              test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
-
     #--------------------------------------------------------------------------------
-           
+
+
     def sample_via_conv(self, doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s=None, target_e=None):
         doc_emb = doc_emb.transpose(-2,-1)
         doc_len = doc_emb.size(-1)
@@ -366,7 +446,7 @@ class FOFEReader(nn.Module):
                                            training=self.training)
             query_emb = nn.functional.dropout(query_emb, p=self.opt['dropout_emb'],
                                            training=self.training)
-
+        
         doc_input_list = [doc_emb, doc_f]
         if self.opt['pos']:
             doc_input_list.append(doc_pos)
@@ -375,27 +455,38 @@ class FOFEReader(nn.Module):
         doc_input = torch.cat(doc_input_list, 2)
 
         return doc_input, query_emb
-        
+
+
     def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask, target_s=None, target_e=None):
         """Inputs:
-        doc = document word indices                 [batch * len_d]
-        doc_f = document word features indices      [batch * len_d * nfeat]
-        doc_pos = document POS tags                 [batch * len_d]
-        doc_ner = document entity tags              [batch * len_d]
-        doc_mask = document padding mask            [batch * len_d]
-        query = question word indices               [batch * len_q]
-        query_mask = question padding mask          [batch * len_q]
+        doc = document/context word indices                 [batch * len_d]
+        doc_mask = document/context padding mask            [batch * len_d]
+        doc_f = document/context word features indices      [batch * len_d * nfeat]
+            -> nfeat = 4; the 4 features are:
+                1. match_origin = doc_word in query; (text's format = original).
+                2. match_lower = doc_word in query; (text's format = original lowercase).
+                3. match_lemma = doc_word in query; (text's format = base form of the word [see spaCy's lemma]).
+                4. context_tf = doc_word's occurance / doc's len; (text's format = base form of the word).
+        doc_pos = document/context POS tags                 [batch * len_d * n_pos_types]
+            -> n_pos_types = 51
+            -> using spaCy's Detailed Part-Of-Speech tagger.
+        doc_ner = document/context entity tags              [batch * len_d * n_ent_types]
+            -> n_ent_types = 19
+        query = query/question word indices                 [batch * len_q]
+        query_mask = query/question padding mask            [batch * len_q]
         """
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
-        
         if self.opt['draw_score']:
             if self.opt['version'] == 's' :
-                dq_input, cands_ans_pos, _ = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
             else:
-                dq_input, cands_ans_pos, d_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
-            scores = scores[:,1:].squeeze(-1)
+            scores = scores[:,1:]
+            scores.masked_fill_(padded_cands_mask, -float('inf'))
+            scores = scores.squeeze(-1)
+            #import pdb; pdb.set_trace()
             return scores, cands_ans_pos
 
         if not self.training:
@@ -406,15 +497,15 @@ class FOFEReader(nn.Module):
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,1:]
-            #import pdb; pdb.set_trace()
             scores.masked_fill_(padded_cands_mask, -float('inf'))
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
+            #import pdb; pdb.set_trace()
             return predict_s, predict_e
 
         if self.training:
             if self.opt['version'] == 's' :
-                dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, target_s, target_e, test_mode=False)
+                dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_pos, target_s, target_e, test_mode=False)
             else:
                 dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             scores = self.fnn(dq_input)

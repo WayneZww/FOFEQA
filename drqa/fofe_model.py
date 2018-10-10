@@ -189,11 +189,20 @@ class DocReaderModel(object):
             top_predict_e_idx = top_cands_pos[:,1]
             f.write("top_predictions & scores:\n")
             for j in range(top_predict_s_idx.size(0)):
-                s_idx = top_predict_s_idx[j].item()
-                e_idx = top_predict_e_idx[j].item()
-                s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
-                predict_text = doc_text[i][s_offset:e_offset]
-                f.write("\t{0}\t{1}\n".format(top_scores[j], predict_text))
+                try:
+                    s_idx = top_predict_s_idx[j].item()
+                    e_idx = top_predict_e_idx[j].item()
+                    s_offset, e_offset = doc_spans[i][s_idx][0], doc_spans[i][e_idx][1]
+                    predict_text = doc_text[i][s_offset:e_offset]
+                    f.write("\t{0}\t{1}\n".format(top_scores[j], predict_text))
+                except Exception as e:
+                    #ERROR CATCH: IT SEEM TO PREDICT INDEX_OUT_OF_BOUND; possibly due to having max_cand_len in fofe_reader.py.
+                    s_idx = top_predict_s_idx[j].item()
+                    e_idx = top_predict_e_idx[j].item()
+                    len_doc_span_i = len(doc_spans[i])
+                    error_prediction="<ERROR_PREDICTING:s_idx={0},e_idx={1},len(doc_spans[i])={2}>".format(s_idx,e_idx,len_doc_span_i)
+                    error_details="<ERROR_DETAILS:{0}>".format(e)
+                    f.write("\t{0}\t{1}{2}\n".format(top_scores[j], error_prediction, error_details))
 
             # 2.2. Print the Text of target (from data); should be same as in training, but double check it.
             f.write("target_text (from data):\n")

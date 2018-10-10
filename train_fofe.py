@@ -46,6 +46,10 @@ def main():
             log.info('[learning rate reduced by {}]'.format(args.reduce_lr))
             
         # Test  dev and total train
+        if args.draw_score:
+            #test_draw(dev, args, model, log, mode='dev')
+            test_draw(train, args, model, log, mode='train')
+            return
         sample_em, sample_f1 = test_process(sample_train, sample_train_y, args, model, log, mode='sample_train')
         dev_em, dev_f1 = test_process(dev, dev_y, args, model, log, mode='dev')
 
@@ -61,7 +65,8 @@ def main():
 
     # Draw Score
     if args.draw_score:
-        test_draw(dev, args, model, log, mode='dev')
+        #test_draw(dev, args, model, log, mode='dev')
+        test_draw(train, args, model, log, mode='train')
         return
 
     dev_em_record = []
