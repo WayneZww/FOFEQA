@@ -114,7 +114,7 @@ class FOFEReader(nn.Module):
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
-                nn.Linear(opt['hidden_size']*4, 2),
+                nn.Linear(opt['hidden_size']*4, 3),
             )
         else:
             raise Exception('Architecture undefined!')
@@ -259,10 +259,13 @@ class FOFEReader(nn.Module):
                 # 2.1.2. get parameter value required to find candidates overlapping with ans
                 sent_boundary_idxs = FOFEReader.find_sentence_boundary_from_pos_tagger(doc_pos)
                 sent_s, sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_s, i, sent_boundary_idxs)
+                """
+                #TODO: Currently if sentence='this is an "example."' and ans='"example."'; sent_boundary would be at '.' not '"', so will trigger 'assert sent_s == _sent_s and sent_e == _sent_e'.
                 _sent_s, _sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_e, i, sent_boundary_idxs)
                 assert sent_s == _sent_s and sent_e == _sent_e, ("ans_s (idx={0}) and ans_e (idx={1}) should always be in the same sentence; i.e. no cross-sentence target ans".format(ans_s, ans_e))
                 assert sent_s != None and sent_e != None, ("ans_s (idx={0}) should always be some where in the doc".format(ans_s))
                 assert _sent_s != None and _sent_e != None, ("ans_e (idx={0}) should always be some where in the doc".format(ans_e))
+                """
                 sub_ans = [(s,e,e-s) for s in range(ans_s, ans_e+1)
                            for e in range(s, ans_e+1)
                            if (s != ans_s or e != ans_e)]               #list of cands who is a substring of ans
@@ -286,12 +289,12 @@ class FOFEReader(nn.Module):
                             .get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx)
                 currbatch_base_idx = i * n_cands_ans
                 ans_idx = func_get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                target_score[ans_idx] = 1
+                target_score[ans_idx] = 2
                 
                 # 2.1.4. get overlapping_ans_idx and set target_score value
                 for ovlp_ans_s, ovlp_ans_e, ovlp_ans_span in overlapping_ans:
                     overlapping_ans_idx = func_get_sample_idx(ovlp_ans_s, ovlp_ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                    target_score[overlapping_ans_idx] = 0.5
+                    target_score[overlapping_ans_idx] = 1
                     assert overlapping_ans_idx != ans_idx, ("ans should not be in list of candidates overlapping with ans")
                 #import pdb; pdb.set_trace()
 
@@ -483,7 +486,7 @@ class FOFEReader(nn.Module):
                 dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
-            scores = scores[:,1:]
+            scores = scores[:,-1:]
             scores.masked_fill_(padded_cands_mask, -float('inf'))
             scores = scores.squeeze(-1)
             #import pdb; pdb.set_trace()
@@ -496,7 +499,7 @@ class FOFEReader(nn.Module):
                 dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
-            scores = scores[:,1:]
+            scores = scores[:,-1:]
             scores.masked_fill_(padded_cands_mask, -float('inf'))
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
@@ -513,6 +516,7 @@ class FOFEReader(nn.Module):
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_score)
             #loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
+            #import pdb; pdb.set_trace()
             return loss
 
             
