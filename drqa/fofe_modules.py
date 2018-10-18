@@ -449,12 +449,13 @@ class fofe_tricontext(nn.Module):
     def get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx=0):
         '''
             sample_start_idx = starting index of target sample within the doc.
-            sample_span = length of target sample.
+            sample_span = length(target sample) - 1; 
+                          sample_span != sample_len;
+                          (0<=sample_span<=max_cand_len-1).
             doc_len = length of doc that target sample was in.
             max_cand_len = a predefine max candidate length that fofe_tricontext was build for.
         '''
-        
-        if (sample_start_idx < doc_len - max_cand_len):
+        if (sample_start_idx <= doc_len - max_cand_len):
             sample_base_idx = sample_start_idx * max_cand_len
         else:
             rev_sample_start_idx = doc_len - sample_start_idx - 1
@@ -491,9 +492,10 @@ class fofe_tricontext(nn.Module):
             context_alpha_buffers.append(x_input.new_zeros(n_cand,doc_len))
         
         for i in range(doc_len):
-            if (i < doc_len - max_cand_len):
+            if (i <= doc_len - max_cand_len):
                 start_idx = i * max_cand_len
                 end_idx = (i+1) * max_cand_len
+                # NOTED: end_idx is actually end_idx + 1, we "+1" by default b/c it's easier to think when use context_alpha_buffers[0][start_idx:end_idx] rather than context_alpha_buffers[0][start_idx:end_idx+1].
                 
                 # Candidate Context alphas buffer
                 if (self.inverse_cand_fofe):
@@ -514,7 +516,8 @@ class fofe_tricontext(nn.Module):
                 base_idx = (doc_len - max_cand_len) * max_cand_len
                 start_idx = base_idx + tri_num(max_cand_len) - tri_num(rev_i+1)
                 end_idx = base_idx + tri_num(max_cand_len) - tri_num(rev_i)
-                
+                # NOTED: end_idx is actually end_idx + 1, we "+1" by default b/c it's easier to think when use context_alpha_buffers[0][start_idx:end_idx] rather than context_alpha_buffers[0][start_idx:end_idx+1].
+
                 # Candidate Context alphas buffer
                 if (self.inverse_cand_fofe):
                     context_alpha_buffers[0][start_idx:end_idx,i:doc_len].copy_(_base_tril_inv_alpha[:doc_len-i,:doc_len-i])
@@ -562,7 +565,6 @@ class fofe_tricontext(nn.Module):
             context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input, test_mode)
         else:
             context_alpha_buffer = self.get_contexts_alpha_buffers(x_input, test_mode)
-        
         n_cand = context_alpha_buffer[0].size(0)
         n_context_types = len(context_alpha_buffer)
         #context_alpha_buffers[0] = Candidate Context alpha buffer

@@ -14,7 +14,7 @@ from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, sed_fofe, fofe_f
                             bidirect_fofe_tricontext, bidirect_fofe, bidirect_fofe_multi_tricontext, bidirect_fofe_multi
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
-from .utils import tri_num
+from .utils import f1_score_word_lvl, find_sentence_boundary_from_pos_tagger
 from .focal_loss import FocalLoss1d
 
 
@@ -114,7 +114,7 @@ class FOFEReader(nn.Module):
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
-                nn.Linear(opt['hidden_size']*4, 3),
+                nn.Linear(opt['hidden_size']*4, 2),
             )
         else:
             raise Exception('Architecture undefined!')
@@ -124,12 +124,10 @@ class FOFEReader(nn.Module):
         else:
             self.fl_loss = None
 
-        # TODO: DISCUSS WITH WAYNE; for now when opt['neg_ratio'] <= 0, just use default weight
-        # originally: self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]))
         if opt['neg_ratio'] > 0:
-            self.ce_loss = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]), ignore_index=-1)
+            self.ce_losses = nn.CrossEntropyLoss(weight=torch.Tensor([1, 1/opt['neg_ratio']]), ignore_index=-1, reduce=False)
         else:
-            self.ce_loss = nn.CrossEntropyLoss(ignore_index=-1)
+            self.ce_losses = nn.CrossEntropyLoss(ignore_index=-1, reduce=False)
         print(self)
         self.apply(self.weights_init)
         self.count=0
@@ -153,22 +151,6 @@ class FOFEReader(nn.Module):
         return predict_s, predict_e
     
     
-    @staticmethod
-    def find_sentence_boundary_from_pos_tagger(doc_pos, get_stacked_batch=False):
-        """
-            doc_pos = document/context POS tags; [batch * len_d * n_pos_types]
-        """
-        #sent_boundary_pos_type = torch.Tensor([ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  1.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0., 0.,  0.,  0.])
-        #TODO: check that '?' and '!' also have this pos_type
-        sent_boundary_pos_type_idx = 7
-        if get_stacked_batch:
-            doc_pos = doc_pos.view([doc_pos.size(0) * doc_pos.size(1), doc_pos.size(2)])
-            sent_boundaries = doc_pos[:,sent_boundary_pos_type_idx].nonzero()
-        else:
-            sent_boundaries  = doc_pos[:,:,sent_boundary_pos_type_idx].nonzero()
-        return sent_boundaries
-
-
     @staticmethod
     def get_nearest_sent_s_and_e(target_idx, target_batch, sent_boundary):
         """
@@ -197,11 +179,12 @@ class FOFEReader(nn.Module):
         return None, None
 
 
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, doc_pos=None, target_s=None, target_e=None, test_mode=False):
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask,
+                                   doc_for_calc_f1=None, sent_boundary_idxs=None, target_s=None, target_e=None, test_mode=False):
         train_mode = (target_s is not None) and (target_e is not None)
         n_fofe_alphas = len(self.opt['fofe_alpha'])
         dq_fofes = []
-        # 1. Construct FOFE Doc & Query Inputs Matrix
+        # 1. Construct FOFE Doc & Query Inputs Matrix. --------------------------------------------------------------------
         if test_mode:
             doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
         else:
@@ -218,9 +201,10 @@ class FOFEReader(nn.Module):
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
 
-        # 2. In train_mode: Build Target Scores Matrix, and then Sampling.
+        # 2. In train_mode: Build Target Scores Matrix, and then Sampling. ------------------------------------------------
         if train_mode:
-            target_score = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
+            target_scores = doc_emb.new_zeros(dq_input.size(0)).unsqueeze(-1)
+            f1_scores = doc_emb.new_zeros(dq_input.size(0))
             _samples_idx = []
             
             # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
@@ -249,39 +233,48 @@ class FOFEReader(nn.Module):
                 ans_span = ans_e - ans_s    # NOTED: ans with 1 word will have ans_span = 0 (not 1).
                 doc_len = min(doc_emb.size(1), self.doc_fofe_tricontext_encoder.fofe_encoders[0].doc_len_limit)
                 max_cand_len = min(doc_len, self.doc_fofe_tricontext_encoder.fofe_encoders[0].cand_len_limit)
-                if max_cand_len < ans_span:
-                    ans_span = max_cand_len
-                assert max_cand_len >= ans_span, ("max_cand_len should alway be > cand_len/ans_span; "
-                                                  "CURRENT: max_cand_len = {0}, ans_span = {1}".format(max_cand_len, ans_span))
+                if max_cand_len <= ans_span:
+                    ans_span = max_cand_len - 1
+                    ans_e = ans_s + ans_span
+                assert max_cand_len >= ans_span + 1, ("max_cand_len should alway be > cand_len/ans_len; noted: ans_len = ans_span + 1 "
+                                                      "CURRENT: max_cand_len = {0},"
+                                                  "ans_span = {1}".format(max_cand_len, ans_span))
                 assert doc_len >= max_cand_len, ("doc_len should alway be > max_cand_len; "
-                                                  "CURRENT: doc_len = {0}, max_cand_len = {1}".format(doc_len, max_cand_len))
+                                                 "CURRENT: doc_len = {0}, "
+                                                 "max_cand_len = {1}".format(doc_len, max_cand_len))
 
                 # 2.1.2. get parameter value required to find candidates overlapping with ans
-                sent_boundary_idxs = FOFEReader.find_sentence_boundary_from_pos_tagger(doc_pos)
                 sent_s, sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_s, i, sent_boundary_idxs)
                 """
-                #TODO: Currently if sentence='this is an "example."' and ans='"example."'; sent_boundary would be at '.' not '"', so will trigger 'assert sent_s == _sent_s and sent_e == _sent_e'.
                 _sent_s, _sent_e = FOFEReader.get_nearest_sent_s_and_e(ans_e, i, sent_boundary_idxs)
-                assert sent_s == _sent_s and sent_e == _sent_e, ("ans_s (idx={0}) and ans_e (idx={1}) should always be in the same sentence; i.e. no cross-sentence target ans".format(ans_s, ans_e))
-                assert sent_s != None and sent_e != None, ("ans_s (idx={0}) should always be some where in the doc".format(ans_s))
-                assert _sent_s != None and _sent_e != None, ("ans_e (idx={0}) should always be some where in the doc".format(ans_e))
+                assert sent_s == _sent_s and sent_e == _sent_e, ("ans_s (idx={0}) and ans_e (idx={1}) "
+                                                                 "should always be in the same sentence; "
+                                                                 "i.e. no cross-sentence target ans".format(ans_s, ans_e))
+                assert sent_s != None and sent_e != None, ("ans_s (idx={0}) should always be "
+                                                           "some where in the doc".format(ans_s))
+                assert _sent_s != None and _sent_e != None, ("ans_e (idx={0}) should always be "
+                                                             "some where in the doc".format(ans_e))
                 """
+                #list of cands who is a substring of ans
                 sub_ans = [(s,e,e-s) for s in range(ans_s, ans_e+1)
                            for e in range(s, ans_e+1)
-                           if (s != ans_s or e != ans_e)]               #list of cands who is a substring of ans
+                           if (s != ans_s or e != ans_e)]
+                #list of cands who is a superstring of ans
                 super_ans = [(s,e,e-s) for s in range(sent_s, ans_s+1)
                              for e in range(ans_e, sent_e+1)
-                             if (s != ans_s or e != ans_e)]             #list of cands who is a superstring of ans
+                             if (s != ans_s or e != ans_e)]
+                #list of cands who has an intersected string with (front substring of) ans
                 front_relative_ans = [(s,e,e-s) for s in range(sent_s, ans_s)
                                       for e in range(ans_s, ans_e)
-                                      if (s != ans_s or e != ans_e)]    #list of cands who has an intersected string with (front substring of) ans
+                                      if (s != ans_s or e != ans_e)]
+                #list of cands who has an intersected string with (rear substring of) ans
                 rear_relative_ans = [(s,e,e-s) for s in range(ans_s+1, ans_e+1)
                                     for e in range(ans_e+1, sent_e+1)
-                                    if (s != ans_s or e != ans_e)]      #list of cands who has an intersected string with (rear substring of) ans
+                                    if (s != ans_s or e != ans_e)]
                 overlapping_ans = sub_ans + super_ans + front_relative_ans + rear_relative_ans
-                overlapping_ans = [(s,e,span) for s,e,span in overlapping_ans if span <= max_cand_len] # remove too long candidate
+                overlapping_ans = [(s,e,span) for s,e,span in overlapping_ans if span <= max_cand_len-1]
                 
-                # 2.1.3. get ans_idx and set target_score value
+                # 2.1.3. get ans_idx, then set target_scores and f1_scores values
                 def func_get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx):
                     return self.doc_fofe_tricontext_encoder\
                             .fofe_encoders[0]\
@@ -289,18 +282,23 @@ class FOFEReader(nn.Module):
                             .get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx)
                 currbatch_base_idx = i * n_cands_ans
                 ans_idx = func_get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                target_score[ans_idx] = 2
+                target_scores[ans_idx] = 1
+                f1_scores[ans_idx] = 1
                 
-                # 2.1.4. get overlapping_ans_idx and set target_score value
+                # 2.1.4. get overlapping_ans_idx, then set target_scores and f1_scores values
                 for ovlp_ans_s, ovlp_ans_e, ovlp_ans_span in overlapping_ans:
-                    overlapping_ans_idx = func_get_sample_idx(ovlp_ans_s, ovlp_ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                    target_score[overlapping_ans_idx] = 1
-                    assert overlapping_ans_idx != ans_idx, ("ans should not be in list of candidates overlapping with ans")
+                    f1 = f1_score_word_lvl(doc_for_calc_f1[i, ovlp_ans_s:ovlp_ans_e+1],
+                                           doc_for_calc_f1[i, ans_s:ans_e+1])
+                    ovlp_ans_idx = func_get_sample_idx(ovlp_ans_s, ovlp_ans_span, doc_len, max_cand_len, currbatch_base_idx)
+                    target_scores[ovlp_ans_idx] = 1
+                    f1_scores[ovlp_ans_idx] = f1
+                    assert ovlp_ans_idx != ans_idx, ("ans should not be in list of candidates overlapping with ans")
                 #import pdb; pdb.set_trace()
 
                 # 2.2. Sampling
                 #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
-                #   TODO @SED: more efficient approach; current sampling method waste via python list, then convert it to equivalent tensor.
+                #   TODO @SED: more efficient approach;
+                #              current sampling method was via python list, then convert it to equivalent tensor.
                 nextbatch_base_idx = (i+1) * n_cands_ans
                 if n_pos_samples == 1 and sample_num == n_cands_ans:
                     currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
@@ -315,29 +313,29 @@ class FOFEReader(nn.Module):
                 
             samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
             samples_dq_input = dq_input.index_select(0, samples_idx)
-            samples_target_score = target_score.index_select(0, samples_idx)
+            samples_target_scores = target_scores.index_select(0, samples_idx)
+            samples_f1_scores = f1_scores.index_select(0, samples_idx)
 
-        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask.
+        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask. -------------------------------------------
         if test_mode:
             # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
             padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
 
-        # 3. Determine what to return base on mode
-        #    NOTE: also reshape dq_input and target_score to match conv1d (instead of linear)
+        # 3. Determine what to return base on mode. -----------------------------------------------------------------------
+        #    NOTE: also reshape dq_input and target_scores to match conv1d (instead of linear)
         if (train_mode) and (not test_mode):
             # 3.1. Train Mode
-            return samples_dq_input, samples_target_score.long().squeeze(-1)
+            return samples_dq_input, samples_target_scores.long().squeeze(-1), samples_f1_scores.squeeze(-1)
         elif (not train_mode) and (test_mode):
             # 3.2. Test Mode and Draw Score Mode for Dev Set
             return dq_input, cands_ans_pos, padded_cands_mask
         elif (train_mode) and (test_mode):
             # 3.3. Draw Score Mode for Train Set (aka for debuging target_s and target_e)
-            return dq_input, target_score.long().squeeze(-1), cands_ans_pos, padded_cands_mask
+            return dq_input, target_scores.long().squeeze(-1), cands_ans_pos, padded_cands_mask
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
                              test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
-    #--------------------------------------------------------------------------------
 
 
     def sample_via_conv(self, doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s=None, target_e=None):
@@ -508,14 +506,31 @@ class FOFEReader(nn.Module):
 
         if self.training:
             if self.opt['version'] == 's' :
-                dq_input, target_score = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_pos, target_s, target_e, test_mode=False)
+                # s version: tricontext_fofe; cand overlapping ans treat as weighted correct (weight < 1)
+                sent_boundary_idxs = find_sentence_boundary_from_pos_tagger(doc_pos)
+                dq_input, target_scores, f1_scores = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask,
+                                                                         doc, sent_boundary_idxs, target_s, target_e, test_mode=False)
+                scores = self.fnn(dq_input)
+                losses = self.ce_losses(scores, target_scores)
+                def overlap_rate_loss(ce_losses, target_scores, overlap_rates):
+                    #loss calculation: loss = ce_loss if target=0; loss = overlap_rate*ce_loss if target=1
+                    target_class0_idx = (target_scores==0).nonzero().squeeze(-1)
+                    target_class1_idx = (target_scores==1).nonzero().squeeze(-1)
+                    olrate_class1_idx = (overlap_rates>0).nonzero().squeeze(-1)
+                    losses_class0 = ce_losses.index_select(0, target_class0_idx)
+                    losses_class1 = ce_losses.index_select(0, target_class1_idx)
+                    olrate_class1 = overlap_rates.index_select(0, olrate_class1_idx)
+                    return torch.cat((olrate_class1 * losses_class1, losses_class0), dim=0).mean(dim=0)
+                loss = overlap_rate_loss(losses, target_scores, f1_scores)
             else:
-                dq_input, target_score, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
-            scores = self.fnn(dq_input)
-            loss = self.ce_loss(scores, target_score)
+                # w version: conv_fofe; cand overlapping ans treat as wrong
+                dq_input, target_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                scores = self.fnn(dq_input)
+                losses = self.ce_losses(scores, target_scores)
+                loss = losses.mean(dim=0)
             if self.fl_loss is not None:
-                loss = loss + self.fl_loss(scores, target_score)
-            #loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_score, dim=1))
+                loss = loss + self.fl_loss(scores, target_scores)
+            #loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_scores, dim=1))
             #import pdb; pdb.set_trace()
             return loss
 
