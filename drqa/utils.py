@@ -57,58 +57,58 @@ def count_num_substring(arg_max_substring_len, arg_string_len):
 
 #TODO: SHOULDN'T USE POS TAGGER FOR SENTENCE SPLITTING, USE SENTENCE BOUNDARY DETECTOR.
 @staticmethod
-    def find_sentence_boundary_from_pos_tagger(doc_pos, get_stacked_batch=False):
+def find_sentence_boundary_from_pos_tagger(doc_pos, get_stacked_batch=False):
+    """
+        doc_pos = document/context POS tags; [batch * len_d * n_pos_types]
         """
-            doc_pos = document/context POS tags; [batch * len_d * n_pos_types]
-            """
-        doc_len = doc_pos.size(1)
-        batch_size = doc_pos.size(0)
-        sent_boundary_pos_type_idx = 7
-        # 1. get sent_boundaries by pos_tagger
-        sent_boundaries = doc_pos[:,:,sent_boundary_pos_type_idx].nonzero()
-        
-        # 2. check all End Of Doc are included in sentence boundaries list
-        eod_sent_idx = doc_len-1
-        
-        # 2.1 count num of missing_sent_boundary
-        if sent_boundaries.size(0) == 0:
-            missing_sent_boundary = batch_size
-        else:
-            n_eod_in_curr_sent_boundaries = (sent_boundaries[:,1]==eod_sent_idx).nonzero().size(0)
-            missing_sent_boundary = batch_size - n_eod_in_curr_sent_boundaries
-        
-        # 2.2 if no missing sent boundary, return sent_boundaries
-        #     else insert the missing sent boundary into sent_boundaries
-        if missing_sent_boundary == 0:
-            return sent_boundaries
-        else:
-            list_sent_boundaries_by_batch = []
-            base_idx = 0
-            for i in range(batch_size):
-                # 2.2.1 get all sent boundaries in curr batch
-                if sent_boundaries.size(0) == 0:
-                    sent_idx_of_batch_i = sent_boundaries.new_empty(0)
-                else:
-                    sent_idx_of_batch_i = (sent_boundaries[:,0]==i).nonzero().squeeze(-1)
-                
-                # 2.2.2 if no sent boundary at all in curr batch, make End Of Doc as the sole sent boundary
-                #       else collect all sent boundaries in curr batch and (if necessary) append End Of Doc to it.
-                if sent_idx_of_batch_i.size(0) <= 0:
-                    sent_boundaries_in_batch_i = sent_boundaries.new_tensor([[i, eod_sent_idx]])
-                else:
-                    sent_boundaries_in_batch_i = sent_boundaries.index_select(0, sent_idx_of_batch_i)
-                    if sent_boundaries_in_batch_i[-1,1].item() != eod_sent_idx:
-                        additonal_sent_boundary = sent_boundaries.new_tensor([[i, eod_sent_idx]])
-                        sent_boundaries_in_batch_i = torch.cat((sent_boundaries_in_batch_i,
-                                                                additonal_sent_boundary), dim=0)
-                list_sent_boundaries_by_batch.append(sent_boundaries_in_batch_i)
-            # 2.2.3 concat sent boundaries of all batches
-            new_sent_boundaries = torch.cat(list_sent_boundaries_by_batch, dim=0)
+    doc_len = doc_pos.size(1)
+    batch_size = doc_pos.size(0)
+    sent_boundary_pos_type_idx = 7
+    # 1. get sent_boundaries by pos_tagger
+    sent_boundaries = doc_pos[:,:,sent_boundary_pos_type_idx].nonzero()
+    
+    # 2. check all End Of Doc are included in sentence boundaries list
+    eod_sent_idx = doc_len-1
+    
+    # 2.1 count num of missing_sent_boundary
+    if sent_boundaries.size(0) == 0:
+        missing_sent_boundary = batch_size
+    else:
+        n_eod_in_curr_sent_boundaries = (sent_boundaries[:,1]==eod_sent_idx).nonzero().size(0)
+        missing_sent_boundary = batch_size - n_eod_in_curr_sent_boundaries
+    
+    # 2.2 if no missing sent boundary, return sent_boundaries
+    #     else insert the missing sent boundary into sent_boundaries
+    if missing_sent_boundary == 0:
+        return sent_boundaries
+    else:
+        list_sent_boundaries_by_batch = []
+        base_idx = 0
+        for i in range(batch_size):
+            # 2.2.1 get all sent boundaries in curr batch
+            if sent_boundaries.size(0) == 0:
+                sent_idx_of_batch_i = sent_boundaries.new_empty(0)
+            else:
+                sent_idx_of_batch_i = (sent_boundaries[:,0]==i).nonzero().squeeze(-1)
             
-            # 2.2.4 check if there still missing sent boundary
-            if (new_sent_boundaries[:,1]==eod_sent_idx).nonzero().size(0) != batch_size:
-                import pdb; pdb.set_trace()
-            return new_sent_boundaries
+            # 2.2.2 if no sent boundary at all in curr batch, make End Of Doc as the sole sent boundary
+            #       else collect all sent boundaries in curr batch and (if necessary) append End Of Doc to it.
+            if sent_idx_of_batch_i.size(0) <= 0:
+                sent_boundaries_in_batch_i = sent_boundaries.new_tensor([[i, eod_sent_idx]])
+            else:
+                sent_boundaries_in_batch_i = sent_boundaries.index_select(0, sent_idx_of_batch_i)
+                if sent_boundaries_in_batch_i[-1,1].item() != eod_sent_idx:
+                    additonal_sent_boundary = sent_boundaries.new_tensor([[i, eod_sent_idx]])
+                    sent_boundaries_in_batch_i = torch.cat((sent_boundaries_in_batch_i,
+                                                            additonal_sent_boundary), dim=0)
+            list_sent_boundaries_by_batch.append(sent_boundaries_in_batch_i)
+        # 2.2.3 concat sent boundaries of all batches
+        new_sent_boundaries = torch.cat(list_sent_boundaries_by_batch, dim=0)
+        
+        # 2.2.4 check if there still missing sent boundary
+        if (new_sent_boundaries[:,1]==eod_sent_idx).nonzero().size(0) != batch_size:
+            import pdb; pdb.set_trace()
+        return new_sent_boundaries
 
 
 def f1_score_word_lvl(pred_tensor, ans_tensor):
