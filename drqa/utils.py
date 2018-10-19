@@ -1,3 +1,4 @@
+import torch
 import argparse
 from collections import Counter
 
@@ -56,7 +57,6 @@ def count_num_substring(arg_max_substring_len, arg_string_len):
 
 
 #TODO: SHOULDN'T USE POS TAGGER FOR SENTENCE SPLITTING, USE SENTENCE BOUNDARY DETECTOR.
-@staticmethod
 def find_sentence_boundary_from_pos_tagger(doc_pos, get_stacked_batch=False):
     """
         doc_pos = document/context POS tags; [batch * len_d * n_pos_types]

@@ -238,7 +238,7 @@ class FOFEReader(nn.Module):
                     ans_e = ans_s + ans_span
                 assert max_cand_len >= ans_span + 1, ("max_cand_len should alway be > cand_len/ans_len; noted: ans_len = ans_span + 1 "
                                                       "CURRENT: max_cand_len = {0},"
-                                                  "ans_span = {1}".format(max_cand_len, ans_span))
+                                                      "ans_span = {1}".format(max_cand_len, ans_span))
                 assert doc_len >= max_cand_len, ("doc_len should alway be > max_cand_len; "
                                                  "CURRENT: doc_len = {0}, "
                                                  "max_cand_len = {1}".format(doc_len, max_cand_len))
