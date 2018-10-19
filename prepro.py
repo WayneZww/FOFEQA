@@ -17,8 +17,8 @@ import logging
 def main():
     args, log = setup()
     
-    train = flatten_json(args.trn_file, 'train')
-    dev = flatten_json(args.dev_file, 'dev')
+    train = flatten_json(args.trn_file, 'train')[:10000]
+    dev = flatten_json(args.dev_file, 'dev')[:10000]
     log.info('json data flattened.')
     
     # tokenize & annotate
@@ -93,9 +93,11 @@ def main():
     }
 
     # train: id, context_id, context_features, tag_id, ent_id,
-    #        question_id, context, context_token_span, answer, answer_start, answer_end
+    #        question_id, context, context_token_span, question, 
+    #        context_sent_starts, answer, answer_start, answer_end
     # dev:   id, context_id, context_features, tag_id, ent_id,
-    #        question_id, context, context_token_span, answer
+    #        question_id, context, context_token_span, question,
+    #        context_sent_starts, answer
     with open('./data/SQuAD-v1.1/data-query.msgpack', 'wb') as f:
         msgpack.dump(result, f)
     if args.sample_size:
@@ -193,6 +195,9 @@ def annotate(row, wv_cased):
     context_token_span = [(w.idx, w.idx + len(w.text)) for w in c_doc]
     context_tags = [w.tag_ for w in c_doc]
     context_ents = [w.ent_type_ for w in c_doc]
+    # ---------------------------------------------------------------------------------<<
+    context_sent_starts = [w.is_sent_start for w in c_doc]
+    # --------------------------------------------------------------------------------->>
     question_lemma = {w.lemma_ if w.lemma_ != '-PRON-' else w.text.lower() for w in q_doc}
     question_tokens_set = set(question_tokens)
     question_tokens_lower_set = set(question_tokens_lower)
@@ -212,26 +217,26 @@ def annotate(row, wv_cased):
     #return (id_, context_tokens, context_features, context_tags, context_ents,
     #        question_tokens, context, context_token_span) + row[3:]
     return (id_, context_tokens, context_features, context_tags, context_ents,
-            question_tokens, context, context_token_span, question) + row[3:]
+            question_tokens, context, context_token_span, question, context_sent_starts) + row[3:]
     # --------------------------------------------------------------------------------->>
 
 def index_answer(row):
     # ---------------------------------------------------------------------------------<<
-    # MOD: ACCOMODATE, KEEPING QUESTION STRING
+    # MOD: ACCOMODATE, KEEPING question and context_sent_starts
     # token_span = row[-4]
-    token_span = row[-5]
+    token_span = row[-6]
     # --------------------------------------------------------------------------------->>
     starts, ends = zip(*token_span)
     answer_start = row[-2]
     answer_end = row[-1]
-    #----------------------------------------------------------------------------------<<
+    # ---------------------------------------------------------------------------------<<
     # MOD: KEEPING ANS STRING
     try:
         # This place, it give up starts, originally it is -3
         return row[:-2] + (starts.index(answer_start), ends.index(answer_end))
     except ValueError:
         return row[:-2] + (None, None)
-# ---------------------------------------------------------------------------------
+    # --------------------------------------------------------------------------------->>
 
 
 def build_vocab(questions, contexts, wv_vocab, sort_all=False):

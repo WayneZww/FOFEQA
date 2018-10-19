@@ -93,9 +93,9 @@ class DocReaderModel(object):
         self.network.train()
         
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda()) for e in ex[:9]]
+            inputs = [Variable(e.cuda()) for e in ex[:10]]
         else:
-            inputs = [Variable(e) for e in ex[:9]]
+            inputs = [Variable(e) for e in ex[:10]]
         
         # Run forward
         loss = self.network(*inputs)
@@ -114,9 +114,9 @@ class DocReaderModel(object):
 
         # Transfer to GPU
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda(async=True)) for e in ex[:7]]
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:8]]
         else:
-            inputs = [Variable(e) for e in ex[:7]]
+            inputs = [Variable(e) for e in ex[:8]]
 
         # Run forward
         with torch.no_grad():
@@ -138,9 +138,9 @@ class DocReaderModel(object):
         self.network.eval()
         # Transfer to GPU
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda(async=True)) for e in ex[:7]]
+            inputs = [Variable(e.cuda(async=True)) for e in ex[:8]]
         else:
-            inputs = [Variable(e) for e in ex[:7]]
+            inputs = [Variable(e) for e in ex[:8]]
         
         p = random.random()
         if p <= 1/100:

@@ -14,7 +14,7 @@ from .fofe_modules import fofe_multi, fofe_multi_encoder, fofe, sed_fofe, fofe_f
                             bidirect_fofe_tricontext, bidirect_fofe, bidirect_fofe_multi_tricontext, bidirect_fofe_multi
 
 from .fofe_net import FOFE_NN_att, FOFE_NN
-from .utils import f1_score_word_lvl, find_sentence_boundary_from_pos_tagger
+from .utils import f1_score_word_lvl
 from .focal_loss import FocalLoss1d
 
 
@@ -114,7 +114,7 @@ class FOFEReader(nn.Module):
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
-                nn.Linear(opt['hidden_size']*4, 2),
+                nn.Linear(opt['hidden_size']*4, 3),
             )
         else:
             raise Exception('Architecture undefined!')
@@ -274,7 +274,7 @@ class FOFEReader(nn.Module):
                 overlapping_ans = sub_ans + super_ans + front_relative_ans + rear_relative_ans
                 overlapping_ans = [(s,e,span) for s,e,span in overlapping_ans if span <= max_cand_len-1]
                 
-                # 2.1.3. get ans_idx, then set target_scores and f1_scores values
+                # 2.1.3. get ans_idx, then set target_scores
                 def func_get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx):
                     return self.doc_fofe_tricontext_encoder\
                             .fofe_encoders[0]\
@@ -282,8 +282,7 @@ class FOFEReader(nn.Module):
                             .get_sample_idx(sample_start_idx, sample_span, doc_len, max_cand_len, currbatch_base_idx)
                 currbatch_base_idx = i * n_cands_ans
                 ans_idx = func_get_sample_idx(ans_s, ans_span, doc_len, max_cand_len, currbatch_base_idx)
-                target_scores[ans_idx] = 1
-                f1_scores[ans_idx] = 1
+                target_scores[ans_idx] = 2
                 
                 # 2.1.4. get overlapping_ans_idx, then set target_scores and f1_scores values
                 for ovlp_ans_s, ovlp_ans_e, ovlp_ans_span in overlapping_ans:
@@ -458,10 +457,11 @@ class FOFEReader(nn.Module):
         return doc_input, query_emb
 
 
-    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_mask, query, query_mask, target_s=None, target_e=None):
+    def forward(self, doc, doc_f, doc_pos, doc_ner, doc_eos, doc_mask, query, query_mask, target_s=None, target_e=None):
         """Inputs:
         doc = document/context word indices                 [batch * len_d]
         doc_mask = document/context padding mask            [batch * len_d]
+        doc_eos = document/context end of sentence tag      [batch * len_d]
         doc_f = document/context word features indices      [batch * len_d * nfeat]
             -> nfeat = 4; the 4 features are:
                 1. match_origin = doc_word in query; (text's format = original).
@@ -507,20 +507,28 @@ class FOFEReader(nn.Module):
         if self.training:
             if self.opt['version'] == 's' :
                 # s version: tricontext_fofe; cand overlapping ans treat as weighted correct (weight < 1)
-                sent_boundary_idxs = find_sentence_boundary_from_pos_tagger(doc_pos)
+                sent_boundary_idxs = (doc_eos==1).nonzero()
                 dq_input, target_scores, f1_scores = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask,
                                                                          doc, sent_boundary_idxs, target_s, target_e, test_mode=False)
                 scores = self.fnn(dq_input)
                 losses = self.ce_losses(scores, target_scores)
-                def overlap_rate_loss(ce_losses, target_scores, overlap_rates):
-                    #loss calculation: loss = ce_loss if target=0; loss = overlap_rate*ce_loss if target=1
-                    target_class0_idx = (target_scores==0).nonzero().squeeze(-1)
-                    target_class1_idx = (target_scores==1).nonzero().squeeze(-1)
-                    olrate_class1_idx = (overlap_rates>0).nonzero().squeeze(-1)
+                def overlap_rate_loss(ce_losses, target_scores, overlap_rates, lambda1=100, lambda2=10):
+                    #loss calculation:
+                    #   loss = ce_loss                              if target=0;
+                    #   loss = ce_loss * overlap_rate * lambda1     if target=1;
+                    #   loss = ce_loss * lambda2                    if target=2;
+                    target_class0_idx = (target_scores==0).nonzero().squeeze(-1)    # CASE: candidate is totally wrong
+                    target_class1_idx = (target_scores==1).nonzero().squeeze(-1)    # CASE: candidate is overlapping right ans
+                    target_class2_idx = (target_scores==2).nonzero().squeeze(-1)    # CASE: candidate is totally right
+                    olrate_class1_idx = (overlap_rates>0).nonzero().squeeze(-1)     # olrate_class1 = F1 score word-level for class target = 1
                     losses_class0 = ce_losses.index_select(0, target_class0_idx)
                     losses_class1 = ce_losses.index_select(0, target_class1_idx)
+                    losses_class2 = ce_losses.index_select(0, target_class2_idx)
                     olrate_class1 = overlap_rates.index_select(0, olrate_class1_idx)
-                    return torch.cat((olrate_class1 * losses_class1, losses_class0), dim=0).mean(dim=0)
+                    return torch.cat((losses_class0,
+                                      losses_class1 * olrate_class1 * lambda1,
+                                      losses_class2 * lambda2),
+                                     dim=0).mean(dim=0)
                 loss = overlap_rate_loss(losses, target_scores, f1_scores)
             else:
                 # w version: conv_fofe; cand overlapping ans treat as wrong

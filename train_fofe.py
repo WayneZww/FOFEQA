@@ -406,47 +406,65 @@ class BatchGen:
             batch = list(zip(*batch))
 
             if self.eval and not self.test_train:
-                assert len(batch) == 10
+                assert len(batch) == 11
             else:
-                assert len(batch) == 12
+                assert len(batch) == 13
 
             context_len = max(len(x) for x in batch[1])
+            # context's word vector
             context_id = torch.LongTensor(batch_size, context_len).fill_(0)
             for i, doc in enumerate(batch[1]):
                 context_id[i, :len(doc)] = torch.LongTensor(doc)
 
             feature_len = len(batch[2][0][0])
 
+            # context's word features
             context_feature = torch.Tensor(batch_size, context_len, feature_len).fill_(0)
             for i, doc in enumerate(batch[2]):
                 for j, feature in enumerate(doc):
                     context_feature[i, j, :] = torch.Tensor(feature)
-
+            # context's detailed Part-Of-Speech (POS) tags
             context_tag = torch.Tensor(batch_size, context_len, self.pos_size).fill_(0)
             for i, doc in enumerate(batch[3]):
                 for j, tag in enumerate(doc):
                     context_tag[i, j, tag] = 1
 
+            # context's entity (NER) tags
             context_ent = torch.Tensor(batch_size, context_len, self.ner_size).fill_(0)
             for i, doc in enumerate(batch[4]):
                 for j, ent in enumerate(doc):
                     context_ent[i, j, ent] = 1
+            
+            # context's end of sentence tags
+            #   NOTED: batch[9] = spaCy's start of sentence tag; (but 1st word is never tag).
+            context_eos = torch.LongTensor(batch_size, context_len).fill_(0)
+            for i, doc in enumerate(batch[9]):
+                doc_sos = [int(j == True) for j in doc]
+                doc_eos = doc_sos[1:] + [1]
+                context_eos[i, :len(doc)] = torch.LongTensor(doc_eos)
 
+            # question's word vector
             question_len = max(len(x) for x in batch[5])
             question_id = torch.LongTensor(batch_size, question_len).fill_(0)
             for i, doc in enumerate(batch[5]):
                 question_id[i, :len(doc)] = torch.LongTensor(doc)
 
+            # context's and question'spadding mask
             context_mask = torch.eq(context_id, 0)
             question_mask = torch.eq(question_id, 0)
+            
+            # context's text and it's span idx
             text = list(batch[6])
             span = list(batch[7])
+
             if not self.eval:
+                # ans's start idx and end idx
                 y_s = torch.LongTensor(batch[-2])
                 y_e = torch.LongTensor(batch[-1])
             if self.draw_score:
+                # question's and ans's text
                 question = list(batch[8])
-                y_ans = list(batch[9])
+                y_ans = list(batch[10])
             if self.gpu:
                 context_id = context_id.pin_memory()
                 context_feature = context_feature.pin_memory()
@@ -455,17 +473,17 @@ class BatchGen:
                 context_mask = context_mask.pin_memory()
                 question_id = question_id.pin_memory()
                 question_mask = question_mask.pin_memory()
-
+            
             if self.draw_score:
                 #import pdb;pdb.set_trace()
-                yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                yield (context_id, context_feature, context_tag, context_ent, context_eos, context_mask,
                        question_id, question_mask, y_ans, question, text, span)
             else:
                 if self.eval:
-                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                    yield (context_id, context_feature, context_tag, context_ent, context_eos, context_mask,
                            question_id, question_mask, text, span)
                 else:
-                    yield (context_id, context_feature, context_tag, context_ent, context_mask,
+                    yield (context_id, context_feature, context_tag, context_ent, context_eos, context_mask,
                            question_id, question_mask, y_s, y_e, text, span)
 
 
