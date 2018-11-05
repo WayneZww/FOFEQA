@@ -295,7 +295,7 @@ def load_data(opt):
     data['train'].sort(key=lambda x: len(x[1]))
     train = [x[:] for x in data['train']]
     train_y = [[x[-3]] for x in data['train']]
-
+    
     #sample data to test train for each epoch
     sample_idx = range(1, len(train), 10)
     sample_train = [train[i] for i in sample_idx]

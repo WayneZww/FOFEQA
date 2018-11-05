@@ -17,8 +17,8 @@ import logging
 def main():
     args, log = setup()
     
-    train = flatten_json(args.trn_file, 'train')[:10000]
-    dev = flatten_json(args.dev_file, 'dev')[:10000]
+    train = flatten_json(args.trn_file, 'train')
+    dev = flatten_json(args.dev_file, 'dev')
     log.info('json data flattened.')
     
     # tokenize & annotate

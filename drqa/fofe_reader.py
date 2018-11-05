@@ -192,11 +192,11 @@ class FOFEReader(nn.Module):
         dq_fofes.append(doc_fofe)
         batch_size = doc_fofe.size(0)
         n_cands_ans = doc_fofe.size(1)
-        doc_embedding_dim = doc_fofe.size(-1) / n_fofe_alphas
+        doc_embedding_dim = doc_fofe.size(-1) // n_fofe_alphas
         
         query_fofe = self.query_fofe_encoder(query_emb, query_mask, batch_size, n_cands_ans)
         dq_fofes.append(query_fofe)       
-        query_embedding_dim = query_fofe.size(-1) / n_fofe_alphas
+        query_embedding_dim = query_fofe.size(-1) // n_fofe_alphas
         
         dq_input = torch.cat(dq_fofes, dim=-1)\
                     .view([batch_size*n_cands_ans,(query_embedding_dim+doc_embedding_dim)*n_fofe_alphas])
@@ -341,14 +341,16 @@ class FOFEReader(nn.Module):
         doc_emb = doc_emb.transpose(-2,-1)
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
-        pos_tagger = doc_pos[:,:,7]
+        pos_tagger = doc_pos
 
         if target_s is not None:
             ans_span = target_e - target_s
             v, idx = torch.max(ans_span, dim=0)
             max_len = int(min(max(self.opt['max_len'], v+1), doc_len))
             score_batch = []
+            f1_batch = []
             can_score = doc_emb.new_zeros((batchsize, 1, max_len, doc_len+1))
+            f1_score = doc_emb.new_zeros((batchsize, 1, max_len, doc_len+1))
         else:
             max_len = int(min(self.opt['max_len'], doc_len))
 
@@ -377,9 +379,24 @@ class FOFEReader(nn.Module):
                     ans_e = target_e[j].item()+1
                     ans_s = target_s[j].item()+1
                     ans_len = ans_span[j].item()+1
-                    if ans_len == i+1:
-                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(1)
+                    if ans_len < i+1:
+                        f1_score[j, :, i, ans_e:ans_s+i+1].fill_(ans_len/(i+1))
+                        for k in range(ans_len):
+                            f1_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(i + k + 1))
+                            f1_score[j, :, i, min(ans_s+i+k+1, doc_len)].fill_((ans_len - k - 1)/(i + k + 1))
+                    if ans_len == i+1
+                        can_score[j, :, i, ans_e:ans_s+i+1].fill_(2)
+                        for k in range(ans_len):
+                            f1_score[j, :, i, max(ans_e-k-1, 0)].fill_((ans_len - k - 1)/(i + k + 1))
+                            f1_score[j, :, i, min(ans_s+i+k+1, doc_len)].fill_((ans_len - k - 1)/(i + k + 1))
+                    else:
+                        f1_score[j, :, i, ans_s+i:ans_e+1].fill_((i+1)/ans_len)
+                        for k in range(i+1):
+                            f1_score[j, :, i, max(ans_s+i-k-1, 0)] = (i - k)/(ans_len + k + 1)
+                            f1_score[j, :, i, min(ans_e+k+1, doc_len)] = (i - k)/(ans_len + k + 1)
                 score_batch.append(can_score[:, :, i, 1+i:doc_len+1])
+                f1_batch.append(f1_score[:, :, i, 1+i:doc_len+1])
+                
             # add pos tagger
             _pos_tagger = doc_emb.new_zeros(pos_tagger.shape, dtype=torch.long)
             for j in range(batchsize):
@@ -426,12 +443,15 @@ class FOFEReader(nn.Module):
         mask = torch.gt(mask, 0)
         if target_s is not None:
             target_score = torch.cat(score_batch, dim=-1).squeeze(1).long()
+            target_f1 = torch.cat(f1_batch, dim=-1).squeeze(1)
             #change size
             target_score = torch.reshape(target_score, (dq_input.size(0),))
-            target_score = target_score - mask.long().squeeze(1)
+            target_f1 = torch.reshape(target_f1, (dq_input.size(0),))
+            
+            target_score = target_score - 2*mask.long().squeeze(1)
             if torch.eq(target_score, 1).sum() != batchsize :
                 import pdb; pdb.set_trace()
-            return dq_input, target_score, cands_ans_pos, mask
+            return dq_input, target_score, target_f1, cands_ans_pos, mask
 
         return dq_input, cands_ans_pos, mask
     
@@ -494,7 +514,7 @@ class FOFEReader(nn.Module):
             if self.opt['version'] == 's' :
                 dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
             else:
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_eos)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,-1:]
@@ -512,35 +532,38 @@ class FOFEReader(nn.Module):
                                                                          doc, sent_boundary_idxs, target_s, target_e, test_mode=False)
                 scores = self.fnn(dq_input)
                 losses = self.ce_losses(scores, target_scores)
-                def overlap_rate_loss(ce_losses, target_scores, overlap_rates, lambda1=100, lambda2=10):
-                    #loss calculation:
-                    #   loss = ce_loss                              if target=0;
-                    #   loss = ce_loss * overlap_rate * lambda1     if target=1;
-                    #   loss = ce_loss * lambda2                    if target=2;
-                    target_class0_idx = (target_scores==0).nonzero().squeeze(-1)    # CASE: candidate is totally wrong
-                    target_class1_idx = (target_scores==1).nonzero().squeeze(-1)    # CASE: candidate is overlapping right ans
-                    target_class2_idx = (target_scores==2).nonzero().squeeze(-1)    # CASE: candidate is totally right
-                    olrate_class1_idx = (overlap_rates>0).nonzero().squeeze(-1)     # olrate_class1 = F1 score word-level for class target = 1
-                    losses_class0 = ce_losses.index_select(0, target_class0_idx)
-                    losses_class1 = ce_losses.index_select(0, target_class1_idx)
-                    losses_class2 = ce_losses.index_select(0, target_class2_idx)
-                    olrate_class1 = overlap_rates.index_select(0, olrate_class1_idx)
-                    return torch.cat((losses_class0,
-                                      losses_class1 * olrate_class1 * lambda1,
-                                      losses_class2 * lambda2),
-                                     dim=0).mean(dim=0)
-                loss = overlap_rate_loss(losses, target_scores, f1_scores)
+                loss = self.overlap_rate_loss(losses, target_scores, f1_scores)
             else:
                 # w version: conv_fofe; cand overlapping ans treat as wrong
-                dq_input, target_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                dq_input, target_scores, f1_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_eos, target_s, target_e)
                 scores = self.fnn(dq_input)
                 losses = self.ce_losses(scores, target_scores)
+                loss = self.overlap_rate_loss(losses, target_scores, f1_scores)
                 loss = losses.mean(dim=0)
             if self.fl_loss is not None:
                 loss = loss + self.fl_loss(scores, target_scores)
             #loss = loss + F.cross_entropy(scores[:,1,:], torch.argmax(target_scores, dim=1))
             #import pdb; pdb.set_trace()
             return loss
+        
+    def overlap_rate_loss(ce_losses, target_scores, overlap_rates, lambda1=100, lambda2=10):
+        #loss calculation:
+        #   loss = ce_loss                              if target=0;
+        #   loss = ce_loss * overlap_rate * lambda1     if target=1;
+        #   loss = ce_loss * lambda2                    if target=2;
+        target_class0_idx = (target_scores==0).nonzero().squeeze(-1)    # CASE: candidate is totally wrong
+        target_class1_idx = (target_scores==1).nonzero().squeeze(-1)    # CASE: candidate is overlapping right ans
+        target_class2_idx = (target_scores==2).nonzero().squeeze(-1)    # CASE: candidate is totally right
+        olrate_class1_idx = (overlap_rates>0).nonzero().squeeze(-1)     # olrate_class1 = F1 score word-level for class target = 1
+                    
+        losses_class0 = ce_losses.index_select(0, target_class0_idx)
+        losses_class1 = ce_losses.index_select(0, target_class1_idx)
+        losses_class2 = ce_losses.index_select(0, target_class2_idx)
+        olrate_class1 = overlap_rates.index_select(0, olrate_class1_idx)
+        return torch.cat((losses_class0,
+                            losses_class1 * olrate_class1 * lambda1,
+                            losses_class2 * lambda2),
+                            dim=0).mean(dim=0)
 
             
 
