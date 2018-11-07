@@ -114,7 +114,7 @@ class FOFEReader(nn.Module):
                 nn.BatchNorm1d( opt['hidden_size']*4),
                 nn.ReLU(inplace=True),
 #                nn.Dropout(0.1),
-                nn.Linear(opt['hidden_size']*4, 3),
+                nn.Linear(opt['hidden_size']*4, 2),
             )
         else:
             raise Exception('Architecture undefined!')
@@ -341,7 +341,11 @@ class FOFEReader(nn.Module):
         doc_emb = doc_emb.transpose(-2,-1)
         doc_len = doc_emb.size(-1)
         batchsize = doc_emb.size(0)
-        pos_tagger = doc_pos[:,:,7]
+        # pos_tagger = doc_pos[:,:,7]
+        if len(doc_pos.size()) == 1:
+            pos_tagger = doc_pos.unsqueeze(0)
+        else:
+            pos_tagger = doc_pos
 
         if target_s is not None:
             ans_span = target_e - target_s
@@ -481,7 +485,7 @@ class FOFEReader(nn.Module):
             if self.opt['version'] == 's' :
                 dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
             else:
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_eos, target_s, target_e)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,-1:]
@@ -494,7 +498,7 @@ class FOFEReader(nn.Module):
             if self.opt['version'] == 's' :
                 dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
             else:
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
+                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_eos)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
             scores = scores[:,-1:]
@@ -532,7 +536,7 @@ class FOFEReader(nn.Module):
                 loss = overlap_rate_loss(losses, target_scores, f1_scores)
             else:
                 # w version: conv_fofe; cand overlapping ans treat as wrong
-                dq_input, target_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                dq_input, target_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_eos, target_s, target_e)
                 scores = self.fnn(dq_input)
                 losses = self.ce_losses(scores, target_scores)
                 loss = losses.mean(dim=0)
