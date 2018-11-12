@@ -131,17 +131,20 @@ class FOFEReader(nn.Module):
         print(self)
         self.apply(self.weights_init)
         self.count=0
-
-
+    
     def rank_cand_select(self, cands_ans_pos, scores, batch_size):
         n_cands = scores.size(0)
-        assert n_cands % batch_size == 0, "Error: total n_cands should be multiple of batch_size"
-        n_cands_per_batch = round(n_cands / batch_size)
+        base_idx_for_each_batch = (cands_ans_pos.sum(dim=1)==0).nonzero().squeeze(-1)
+        assert base_idx_for_each_batch.size(0) == batch_size, "number of available base_idx should match the batch_size"
         predict_s = []
         predict_e = []
         for i in range(batch_size):
-            base_idx = i*n_cands_per_batch
-            score, idx = scores[base_idx:base_idx+n_cands_per_batch].max(dim=0)
+            base_idx = base_idx_for_each_batch[i]
+            if i == batch_size - 1:
+                fin_idx = n_cands - 1
+            else:
+                fin_idx = base_idx_for_each_batch[i+1] - 1
+            score, idx = scores[base_idx:fin_idx].max(dim=0)
             _predict = cands_ans_pos[idx.item()]
             _predict_s = round(_predict[0].item())
             _predict_e = round(_predict[1].item())
@@ -149,7 +152,6 @@ class FOFEReader(nn.Module):
             predict_s.append(_predict_s)
             predict_e.append(_predict_e)
         return predict_s, predict_e
-    
     
     @staticmethod
     def get_nearest_sent_s_and_e(target_idx, target_batch, sent_boundary):
@@ -208,24 +210,6 @@ class FOFEReader(nn.Module):
             f1_scores = doc_emb.new_zeros(dq_input.size(0))
             _samples_idx = []
             
-            # sample_num, n_neg_samples, n_pos_samples are number of samples per batch.
-            if self.opt['sample_num'] > 0 and self.opt['neg_ratio'] > 0:
-                sample_num = self.opt['sample_num']
-                n_neg_samples = round(sample_num * self.opt['neg_ratio'])
-                n_pos_samples = sample_num - n_neg_samples
-            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] > 0:
-                n_neg_samples = n_cands_ans - 1
-                n_pos_samples = round(n_neg_samples / self.opt['neg_ratio']) - n_neg_samples
-                sample_num = n_pos_samples + n_neg_samples
-            elif self.opt['sample_num'] <= 0 and self.opt['neg_ratio'] <= 0:
-                sample_num = n_cands_ans
-                n_pos_samples = 1
-                n_neg_samples = sample_num - n_pos_samples
-            else:
-                sample_num = self.opt['sample_num']
-                n_pos_samples = 1
-                n_neg_samples = sample_num - n_pos_samples
-        
             for i in range(target_s.size(0)):
                 # 2.1. Build Target Scores Matrix.
                 # 2.1.1. get parameter value required to find ans_idx
@@ -295,44 +279,32 @@ class FOFEReader(nn.Module):
                     assert ovlp_ans_idx != ans_idx, ("ans should not be in list of candidates overlapping with ans")
                 #import pdb; pdb.set_trace()
 
-                # 2.2. Sampling
-                #   NOTED: n_pos_samples and n_neg_samples are number of pos/neg samples PER BATCH.
-                #   TODO @SED: more efficient approach;
-                #              current sampling method was via python list, then convert it to equivalent tensor.
-                nextbatch_base_idx = (i+1) * n_cands_ans
-                if n_pos_samples == 1 and sample_num == n_cands_ans:
-                    currbatch_samples_idx = list(range(currbatch_base_idx, nextbatch_base_idx))
-                else:
-                    neg_samples_population = list(range(currbatch_base_idx, ans_idx)) + list(range(ans_idx+1, nextbatch_base_idx))
-                    n_neg_samples_quot, n_neg_samples_mod = divmod(n_neg_samples, len(neg_samples_population))
-                    currbatch_samples_idx = ([ans_idx] * n_pos_samples) + \
-                                            (random.sample(neg_samples_population, n_neg_samples_mod)) + \
-                                            (neg_samples_population * n_neg_samples_quot)
-                random.shuffle(currbatch_samples_idx)
-                _samples_idx += currbatch_samples_idx
-                
-            samples_idx = dq_input.new_tensor(_samples_idx, dtype=torch.long)
-            samples_dq_input = dq_input.index_select(0, samples_idx)
-            samples_target_scores = target_scores.index_select(0, samples_idx)
-            samples_f1_scores = f1_scores.index_select(0, samples_idx)
+
 
         # 2. In test_mode: Build batchwise cands_ans_pos and cands_tobe_mask. -------------------------------------------
         if test_mode:
             # 2.1. Reshape batchwise cands_ans_pos and cands_tobe_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
-            cands_tobe_mask = _cands_tobe_mask.contiguous().view([batch_size*n_cands_ans, 1])
+            
+            cands_tokeep = (_cands_tobe_mask==0).contiguous().view([batch_size*n_cands_ans])
+            cands_tokeep_idx = cands_tokeep.nonzero().squeeze(-1)
+            pruned_dq_input = dq_input.index_select(0, cands_tokeep_idx)
+            pruned_cands_ans_pos = cands_ans_pos.index_select(0, cands_tokeep_idx)
+            #pruned_target_scores = target_scores.index_select(0, cands_tokeep_idx)
+            #pruned_f1_scores = f1_scores.index_select(0, cands_tokeep_idx)
+
 
         # 3. Determine what to return base on mode. -----------------------------------------------------------------------
         #    NOTE: also reshape dq_input and target_scores to match conv1d (instead of linear)
         if (train_mode) and (not test_mode):
             # 3.1. Train Mode
-            return samples_dq_input, samples_target_scores.long().squeeze(-1), samples_f1_scores.squeeze(-1)
+            return dq_input, target_scores.long().squeeze(-1), f1_scores.squeeze(-1)
         elif (not train_mode) and (test_mode):
             # 3.2. Test Mode and Draw Score Mode for Dev Set
-            return dq_input, cands_ans_pos, cands_tobe_mask
+            return pruned_dq_input, pruned_cands_ans_pos
         elif (train_mode) and (test_mode):
             # 3.3. Draw Score Mode for Train Set (aka for debuging target_s and target_e)
-            return dq_input, target_scores.long().squeeze(-1), cands_ans_pos, cands_tobe_mask
+            return dq_input, target_scores.long().squeeze(-1), cands_ans_pos
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
                              test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
@@ -480,29 +452,35 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.opt['draw_score']:
             if self.opt['version'] == 's' :
-                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
+                dq_input, cands_ans_pos = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
+                scores = self.fnn(dq_input)
+                scores = F.softmax(scores, dim=1)
+                scores = scores[:,-1:]
+                scores = scores.squeeze(-1)
             else:
                 dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            scores, _ = scores[:,-2:].max(dim=1, keepdim=True)      # Get max(score_of_class1, score_of_class2) for each candidate.
-            scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
-            scores = scores.squeeze(-1)
+                scores = self.fnn(dq_input)
+                scores = F.softmax(scores, dim=1)
+                scores = scores[:,-1:]
+                scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
+                scores = scores.squeeze(-1)
             #import pdb; pdb.set_trace()
             return scores, cands_ans_pos
 
         if not self.training:
             if self.opt['version'] == 's' :
-                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
+                dq_input, cands_ans_pos = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
+                scores = self.fnn(dq_input)
+                scores = F.softmax(scores, dim=1)
+                scores = scores[:,-1:]
             else:
                 dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
-            scores = self.fnn(dq_input)
-            scores = F.softmax(scores, dim=1)
-            scores, _ = scores[:,-2:].max(dim=1, keepdim=True)      # Get max(score_of_class1, score_of_class2) for each candidate.
-            scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
+                scores = self.fnn(dq_input)
+                scores = F.softmax(scores, dim=1)
+                scores = scores[:,-1:]
+                scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
-            #import pdb; pdb.set_trace()
             return predict_s, predict_e
 
         if self.training:
