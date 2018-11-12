@@ -464,7 +464,7 @@ class fofe_tricontext(nn.Module):
         sample_idx = currbatch_base_idx + sample_base_idx + sample_span
         return sample_idx
 
-    def get_contexts_alpha_buffers(self, x_input, test_mode=False):
+    def get_contexts_alpha_buffers(self, x_input):
         '''
             Derive context_alpha_buffers from _base_tril_alpha and _base_triu_alpha
             
@@ -544,26 +544,19 @@ class fofe_tricontext(nn.Module):
                                                                     .expand(end_idx-start_idx,doc_len))
 
             # Candidate Positions within Doc
-            if (test_mode):
-                cands_pos[start_idx:end_idx, 0] = i
-                cands_pos[start_idx:end_idx, 1].copy_(torch.range(i, i+end_idx-start_idx-1))
+            cands_pos[start_idx:end_idx, 0] = i
+            cands_pos[start_idx:end_idx, 1].copy_(torch.range(i, i+end_idx-start_idx-1))
         
-        if (test_mode):
-            return context_alpha_buffers, cands_pos
-        else:
-            return context_alpha_buffers
+        return context_alpha_buffers, cands_pos
 
     
-    def forward(self, x_input, x_mask, x_eos, test_mode=False):
+    def forward(self, x_input, x_mask, x_eos):
         #TODO @SED: Expand the cand_len_limit to match len of ans (if len of ans > cand_len_limit)
         batch_size = x_input.size(0)
         length = min(x_input.size(1), self.doc_len_limit)
         embedding_dim = x_input.size(2)
         
-        if (test_mode):
-            context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input, test_mode)
-        else:
-            context_alpha_buffer = self.get_contexts_alpha_buffers(x_input, test_mode)
+        context_alpha_buffer, cands_pos = self.get_contexts_alpha_buffers(x_input)
         n_cand = context_alpha_buffer[0].size(0)
         n_context_types = len(context_alpha_buffer)
         #context_alpha_buffers[0] = Candidate Context alpha buffer
@@ -596,22 +589,19 @@ class fofe_tricontext(nn.Module):
                                               _batchwise_fofe_codes[3],
                                               _batchwise_fofe_codes[4]], dim=-1)
         
-        if (test_mode):
-            batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
-            
-            if not self.inverse_cand_fofe:
-                batchwise_padded_cands = torch.bmm(_batchwise_alpha_buffer[0], x_mask.float().unsqueeze(-1)) > 0
-                batchwise_cands_within_sent = torch.bmm(_batchwise_alpha_buffer[0], x_eos.float().unsqueeze(-1)) == 0
-                batchwise_cands_lastof_sent = torch.bmm(_batchwise_alpha_buffer[0], x_eos.float().unsqueeze(-1)) == 1
-                batchwise_cands_crossed_sent = (batchwise_cands_within_sent + batchwise_cands_lastof_sent) == 0
-                batchwise_cands_tobe_mask = (batchwise_padded_cands + batchwise_cands_crossed_sent) > 0
-                return batchwise_fofe_codes, batchwise_cands_pos, batchwise_cands_tobe_mask
-            else:
-                # CURRENTLY: if inverse==True, batchwise_cross_sent_cands will not work;
-                #            (noted batchwise_padded_cands will still work when inverse==True)
-                return batchwise_fofe_codes, batchwise_cands_pos
+        batchwise_cands_pos = cands_pos.unsqueeze(0).expand(batch_size,n_cand, cands_pos.size(-1))
+        
+        if not self.inverse_cand_fofe:
+            batchwise_padded_cands = torch.bmm(_batchwise_alpha_buffer[0], x_mask.float().unsqueeze(-1)) > 0
+            batchwise_cands_within_sent = torch.bmm(_batchwise_alpha_buffer[0], x_eos.float().unsqueeze(-1)) == 0
+            batchwise_cands_lastof_sent = torch.bmm(_batchwise_alpha_buffer[0], x_eos.float().unsqueeze(-1)) == 1
+            batchwise_cands_crossed_sent = (batchwise_cands_within_sent + batchwise_cands_lastof_sent) == 0
+            batchwise_cands_tobe_mask = (batchwise_padded_cands + batchwise_cands_crossed_sent) > 0
+            return batchwise_fofe_codes, batchwise_cands_pos, batchwise_cands_tobe_mask
         else:
-            return batchwise_fofe_codes
+            # CURRENTLY: if inverse==True, batchwise_cross_sent_cands will not work;
+            #            (noted batchwise_padded_cands will still work when inverse==True)
+            return batchwise_fofe_codes, batchwise_cands_pos
 
 
 class bidirect_fofe_tricontext(nn.Module):
@@ -637,18 +627,11 @@ class bidirect_fofe_tricontext(nn.Module):
                                              has_lr_ctx_cand_excl=self.has_lr_ctx_cand_excl,
                                              inverse=True)
 
-    def forward(self, x_input, x_mask, x_eos, test_mode=False):
-        if (test_mode):
-            forward_fofe_code, cands_pos, cands_tobe_mask  = self.forward_fofe(x_input, x_mask, x_eos, test_mode)
-            backward_fofe_code, _ = self.backward_fofe(x_input, x_mask, x_eos, test_mode)
-            fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
-            return fofe_code, cands_pos, cands_tobe_mask
-        else:
-            forward_fofe_code = self.forward_fofe(x_input, x_mask, x_eos, test_mode)
-            backward_fofe_code = self.backward_fofe(x_input, x_mask, x_eos, test_mode)
-            fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
-            return fofe_code
-
+    def forward(self, x_input, x_mask, x_eos):
+        forward_fofe_code, cands_pos, cands_tobe_mask  = self.forward_fofe(x_input, x_mask, x_eos)
+        backward_fofe_code, _ = self.backward_fofe(x_input, x_mask, x_eos)
+        fofe_code = torch.cat([forward_fofe_code,backward_fofe_code], dim=-1)
+        return fofe_code, cands_pos, cands_tobe_mask
 
 class bidirect_fofe(nn.Module):
     def __init__(self, channels, alpha):
@@ -677,20 +660,13 @@ class bidirect_fofe_multi_tricontext(nn.Module):
                                                                has_lr_ctx_cand_excl=contexts_excl_cand))
         self.fofe_encoders = nn.ModuleList(self.fofe_encoders)
     
-    def forward(self, doc_emb, doc_mask, doc_eos, test_mode=False):
+    def forward(self, doc_emb, doc_mask, doc_eos):
         doc_fofe = []
         for d_fofe_encoder in self.fofe_encoders:
-            if test_mode:
-                _doc_fofe, _cands_ans_pos, _cands_tobe_mask = d_fofe_encoder(doc_emb, doc_mask, doc_eos, test_mode)
-            else:
-                _doc_fofe = d_fofe_encoder(doc_emb, doc_mask, doc_eos, test_mode)
+            _doc_fofe, _cands_ans_pos, _cands_tobe_mask = d_fofe_encoder(doc_emb, doc_mask, doc_eos)
             doc_fofe.append(_doc_fofe)
         doc_fofe = torch.cat(doc_fofe, dim=-1)
-
-        if test_mode:
-            return doc_fofe, _cands_ans_pos, _cands_tobe_mask
-        else: 
-            return doc_fofe
+        return doc_fofe, _cands_ans_pos, _cands_tobe_mask
 
         
 class bidirect_fofe_multi(nn.Module):
