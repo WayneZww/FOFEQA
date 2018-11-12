@@ -214,6 +214,10 @@ def setup():
     parser.add_argument('--fofe_alpha', nargs='+', type=float, default='0.8',
                         help='use space as separator for dual-fofe; (e.g. 0.4 0.8).')
     parser.add_argument('--fofe_max_length', type=int, default=64)
+    parser.add_argument('--olr_loss_lambda1', type=float, default=10.0,
+                        help='lambda1 weight for calculate overlap rate loss (in cand overlapping ans case).')
+    parser.add_argument('--olr_loss_lambda2', type=float, default=100.0,
+                        help='lambda2 weight for calculate overlap rate loss (in cand is ans case).')
     parser.add_argument('--focal_alpha', type=float, default=0.25)
     parser.add_argument('--focal_gamma', type=int, default=2)
     parser.add_argument('--filter', default='fofe',
@@ -310,12 +314,17 @@ def load_data(opt):
 def train_process(train, epoch, args, model, log):
     batches = BatchGen(train, batch_size=args.batch_size, gpu=args.cuda)
     start = datetime.now()
+    avg_losses_per_minibatch = []
     for i, batch in enumerate(batches):
-        model.update(batch)
+        avg_losses_per_minibatch.append(model.update(batch))
         if i % args.log_per_updates == 0:
             log.info('> epoch [{0:2}] updates[{1:6}] train loss[{2:.5f}] remaining[{3}]'.format(
                 epoch, model.updates, model.train_loss.value,
                 str((datetime.now() - start) / (i + 1) * (len(batches) - i - 1)).split('.')[0]))
+
+    # SINCE each minibatch have same size; SO avg of avg_losses_per_minibatch == avg of sum_losses_per_minibatch
+    avg_loss = sum(avg_losses_per_minibatch) / len(avg_losses_per_minibatch)
+    log.warning("Avg Loss: {}".format(avg_loss))
 
 
 def test_process(dev, dev_y, args, model, log, mode='dev'):

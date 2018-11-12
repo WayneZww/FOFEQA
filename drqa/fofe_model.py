@@ -108,6 +108,9 @@ class DocReaderModel(object):
         self.optimizer.step()
         self.updates += 1
 
+        # Return loss (for plotting learning curve)
+        return loss.item()
+
     def predict(self, ex):
         # Eval mode
         self.network.eval()

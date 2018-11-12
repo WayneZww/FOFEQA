@@ -179,16 +179,17 @@ class FOFEReader(nn.Module):
         return None, None
 
 
-    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask,
-                                   doc_for_calc_f1=None, sent_boundary_idxs=None, target_s=None, target_e=None, test_mode=False):
+    def sample_via_fofe_tricontext(self, doc_emb, query_emb, doc_mask, query_mask, doc_eos,
+                                   doc_for_calc_f1=None, target_s=None, target_e=None, test_mode=False):
         train_mode = (target_s is not None) and (target_e is not None)
+        sent_boundary_idxs = (doc_eos==1).nonzero()
         n_fofe_alphas = len(self.opt['fofe_alpha'])
         dq_fofes = []
         # 1. Construct FOFE Doc & Query Inputs Matrix. --------------------------------------------------------------------
         if test_mode:
-            doc_fofe, _cands_ans_pos, _padded_cands_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
+            doc_fofe, _cands_ans_pos, _cands_tobe_mask = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, doc_eos, test_mode)
         else:
-            doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, test_mode)
+            doc_fofe = self.doc_fofe_tricontext_encoder(doc_emb, doc_mask, doc_eos, test_mode)
         dq_fofes.append(doc_fofe)
         batch_size = doc_fofe.size(0)
         n_cands_ans = doc_fofe.size(1)
@@ -315,11 +316,11 @@ class FOFEReader(nn.Module):
             samples_target_scores = target_scores.index_select(0, samples_idx)
             samples_f1_scores = f1_scores.index_select(0, samples_idx)
 
-        # 2. In test_mode: Build batchwise cands_ans_pos and padded_cands_mask. -------------------------------------------
+        # 2. In test_mode: Build batchwise cands_ans_pos and cands_tobe_mask. -------------------------------------------
         if test_mode:
-            # 2.1. Reshape batchwise cands_ans_pos and padded_cands_mask (i.e. stack each batch up)
+            # 2.1. Reshape batchwise cands_ans_pos and cands_tobe_mask (i.e. stack each batch up)
             cands_ans_pos = _cands_ans_pos.contiguous().view([batch_size*n_cands_ans,_cands_ans_pos.size(-1)])
-            padded_cands_mask = _padded_cands_mask.contiguous().view([batch_size*n_cands_ans, 1])
+            cands_tobe_mask = _cands_tobe_mask.contiguous().view([batch_size*n_cands_ans, 1])
 
         # 3. Determine what to return base on mode. -----------------------------------------------------------------------
         #    NOTE: also reshape dq_input and target_scores to match conv1d (instead of linear)
@@ -328,10 +329,10 @@ class FOFEReader(nn.Module):
             return samples_dq_input, samples_target_scores.long().squeeze(-1), samples_f1_scores.squeeze(-1)
         elif (not train_mode) and (test_mode):
             # 3.2. Test Mode and Draw Score Mode for Dev Set
-            return dq_input, cands_ans_pos, padded_cands_mask
+            return dq_input, cands_ans_pos, cands_tobe_mask
         elif (train_mode) and (test_mode):
             # 3.3. Draw Score Mode for Train Set (aka for debuging target_s and target_e)
-            return dq_input, target_scores.long().squeeze(-1), cands_ans_pos, padded_cands_mask
+            return dq_input, target_scores.long().squeeze(-1), cands_ans_pos, cands_tobe_mask
         else:
             raise ValueError("This is supervise learning, must have target during training; invalid values:\n \
                              test_mode={0}, target_s={1}, target_e={2}".format(test_mode, target_s, target_e))
@@ -479,26 +480,26 @@ class FOFEReader(nn.Module):
         doc_emb, query_emb = self.input_embedding(doc, doc_f, doc_pos, doc_ner, query)
         if self.opt['draw_score']:
             if self.opt['version'] == 's' :
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
             else:
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
+                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
-            scores = scores[:,-1:]
-            scores.masked_fill_(padded_cands_mask, -float('inf'))
+            scores, _ = scores[:,-2:].max(dim=1, keepdim=True)      # Get max(score_of_class1, score_of_class2) for each candidate.
+            scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
             scores = scores.squeeze(-1)
             #import pdb; pdb.set_trace()
             return scores, cands_ans_pos
 
         if not self.training:
             if self.opt['version'] == 's' :
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, test_mode=True)
+                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos, test_mode=True)
             else:
-                dq_input, cands_ans_pos, padded_cands_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
+                dq_input, cands_ans_pos, cands_tobe_mask = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos)
             scores = self.fnn(dq_input)
             scores = F.softmax(scores, dim=1)
-            scores = scores[:,-1:]
-            scores.masked_fill_(padded_cands_mask, -float('inf'))
+            scores, _ = scores[:,-2:].max(dim=1, keepdim=True)      # Get max(score_of_class1, score_of_class2) for each candidate.
+            scores.masked_fill_(cands_tobe_mask, -float('inf'))     # If cands is marked to be mask, set score to -inf
             batch_size = query.size(0)
             predict_s, predict_e = self.rank_cand_select(cands_ans_pos, scores, batch_size)
             #import pdb; pdb.set_trace()
@@ -507,16 +508,16 @@ class FOFEReader(nn.Module):
         if self.training:
             if self.opt['version'] == 's' :
                 # s version: tricontext_fofe; cand overlapping ans treat as weighted correct (weight < 1)
-                sent_boundary_idxs = (doc_eos==1).nonzero()
-                dq_input, target_scores, f1_scores = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask,
-                                                                         doc, sent_boundary_idxs, target_s, target_e, test_mode=False)
+                dq_input, target_scores, f1_scores = self.sample_via_fofe_tricontext(doc_emb, query_emb, doc_mask, query_mask, doc_eos,
+                                                                                     doc, target_s, target_e, test_mode=False)
                 scores = self.fnn(dq_input)
                 losses = self.ce_losses(scores, target_scores)
-                def overlap_rate_loss(ce_losses, target_scores, overlap_rates, lambda1=100, lambda2=10):
+                
+                def overlap_rate_loss(ce_losses, target_scores, overlap_rates, lambda1=10, lambda2=100):
                     #loss calculation:
-                    #   loss = ce_loss                              if target=0;
-                    #   loss = ce_loss * overlap_rate * lambda1     if target=1;
-                    #   loss = ce_loss * lambda2                    if target=2;
+                    #   loss = ce_loss                              if target=0; Reject
+                    #   loss = ce_loss * overlap_rate * lambda1     if target=1; Partial Accept
+                    #   loss = ce_loss * lambda2                    if target=2; Accept
                     target_class0_idx = (target_scores==0).nonzero().squeeze(-1)    # CASE: candidate is totally wrong
                     target_class1_idx = (target_scores==1).nonzero().squeeze(-1)    # CASE: candidate is overlapping right ans
                     target_class2_idx = (target_scores==2).nonzero().squeeze(-1)    # CASE: candidate is totally right
@@ -529,7 +530,16 @@ class FOFEReader(nn.Module):
                                       losses_class1 * olrate_class1 * lambda1,
                                       losses_class2 * lambda2),
                                      dim=0).mean(dim=0)
-                loss = overlap_rate_loss(losses, target_scores, f1_scores)
+                
+                # IF lambda1 == 0 and lambda2 == 0, use ce_loss, ELSE use overlap_rate_loss.
+                if (self.opt['olr_loss_lambda1'] == 0 and self.opt['olr_loss_lambda2'] == 0):
+                    loss = losses.mean(dim=0)
+                else:
+                    loss = overlap_rate_loss(losses,
+                                             target_scores,
+                                             f1_scores,
+                                             lambda1=self.opt['olr_loss_lambda1'],
+                                             lambda2=self.opt['olr_loss_lambda2'])
             else:
                 # w version: conv_fofe; cand overlapping ans treat as wrong
                 dq_input, target_scores, cands_ans_pos, mask_batch = self.sample_via_conv(doc_emb, doc_mask, query_emb, query_mask, doc_pos, target_s, target_e)
